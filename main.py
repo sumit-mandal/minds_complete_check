@@ -1,7 +1,6 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-# from apis.responder_api import router as responder_router
 from apis.interviewer_api import router as interviewer_router
 
 app = FastAPI(title="Agentic Safety Assessment")
@@ -16,7 +15,6 @@ app.add_middleware(
 )
 
 # Route registration
-# app.include_router(responder_router, prefix="/api")
 app.include_router(interviewer_router, prefix="/api")
 
 @app.get("/")

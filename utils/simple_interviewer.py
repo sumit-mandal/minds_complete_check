@@ -10,12 +10,12 @@ from typing import Dict, List, Any, Optional
 
 from utils.state_manager import StateManager
 from utils.graph_3_llm_helper import (
-    topic_selector_llm, 
     question_generator_llm, 
     evaluation_llm,
     summarizer_llm
 )
 from utils.graph_1_interview_domains import INTERVIEW_DOMAINS
+from utils.database import InterviewDatabase
 from langchain_core.prompts import ChatPromptTemplate
 
 class SimpleAutomatedInterviewer:
@@ -28,6 +28,7 @@ class SimpleAutomatedInterviewer:
         self.last_response = None  # Store the last user response for context
         self.max_questions = max_questions  # Maximum number of questions allowed
         self.question_count = 0  # Track number of questions asked
+        self.database = InterviewDatabase()  # Database for storing responses
     
     def start_interview(self, session_id: str = None) -> Dict[str, Any]:
         """Start a new interview session with a fixed introduction question"""
@@ -39,6 +40,9 @@ class SimpleAutomatedInterviewer:
         self.interview_started = False
         self.last_response = None
         self.question_count = 0  # Reset question count for new interview
+        
+        # Save session start to database
+        self.database.save_session_start(session_id, self.max_questions)
         
         # Always start with the introduction question
         return {
@@ -68,6 +72,9 @@ class SimpleAutomatedInterviewer:
         # Update state
         self._update_state(user_response, evaluation)
         
+        # Store the current question text for database
+        self.current_question_text = self._get_current_question_text()
+        
         # If this was the introduction, mark interview as started
         if not self.interview_started:
             self.interview_started = True
@@ -75,21 +82,48 @@ class SimpleAutomatedInterviewer:
         # Increment question count first
         self.question_count += 1
         
+        # Save response to database
+        response_id = self.database.save_response(
+            session_id=self.current_session_id,
+            question_number=self.question_count,
+            question_text=self.current_question_text,
+            user_response=user_response,
+            question_type=self._get_question_type(),
+            target_skills=self._get_target_skills()
+        )
+        
+        # Save evaluation to database
+        self.database.save_evaluation(
+            session_id=self.current_session_id,
+            response_id=response_id,
+            evaluation=evaluation
+        )
+        
         # Check if interview is complete
         progress = self.state_manager.get_interview_progress()
         
         # Check completion conditions: progress, skills covered, or max questions reached
-        if (progress["progress_percentage"] >= 95 or 
+        if (progress["progress_percentage"] >= 99 or 
             progress["covered_skills"] >= progress["total_skills"] or
             self.question_count >= self.max_questions):
             
             # Generate summary
             summary = self._generate_summary()
+            final_results = self.state_manager.export_results()
+            completion_reason = self._get_completion_reason(progress)
+            
+            # Save session completion to database
+            self.database.save_session_completion(
+                session_id=self.current_session_id,
+                final_results=final_results,
+                completion_reason=completion_reason
+            )
+            
             return {
                 "interview_complete": True,
                 "summary": summary,
-                "final_results": self.state_manager.export_results(),
-                "completion_reason": self._get_completion_reason(progress)
+                "final_results": final_results,
+                "completion_reason": completion_reason
             }
         else:
             # Get next question based on previous response
@@ -361,6 +395,35 @@ Be thorough, professional, and constructive in your analysis."""),
     def get_results(self) -> Dict[str, Any]:
         """Get current interview results"""
         return self.state_manager.export_results()
+    
+    def _get_current_question_text(self) -> str:
+        """Get the current question text"""
+        if self.question_count == 0:
+            return "Please give us a brief introduction about yourself. Tell us about your background, experiences, and what brings you here today. This will help us understand your perspective and tailor the interview to your specific situation."
+        else:
+            # Get the last question from the state manager
+            if self.state_manager.state.user_responses:
+                last_response_data = self.state_manager.state.user_responses[-1]
+                return last_response_data.get("question_text", "Unknown question")
+            return "Unknown question"
+    
+    def _get_question_type(self) -> str:
+        """Get the current question type"""
+        if self.question_count == 0:
+            return "introduction"
+        else:
+            return "behavioral"
+    
+    def _get_target_skills(self) -> List[str]:
+        """Get the current target skills"""
+        if self.question_count == 0:
+            return []
+        else:
+            # Get target skills from the last question generation
+            uncovered_skills = self.state_manager.get_uncovered_skills()
+            if uncovered_skills:
+                return [skill["skill"] for skill in uncovered_skills[:3]]  # Top 3 skills
+            return []
     
     def reset_interview(self):
         """Reset the interview state"""

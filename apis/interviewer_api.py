@@ -1,15 +1,17 @@
 from fastapi import APIRouter, HTTPException, Depends, Form
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import uuid
 from datetime import datetime
 
 from utils.simple_interviewer import SimpleAutomatedInterviewer
+from utils.database import InterviewDatabase
 
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
 
-# Global interviewer instance
+# Global instances
 interviewer = SimpleAutomatedInterviewer(max_questions=3)  # Set max questions to 3
+database = InterviewDatabase()  # Database instance
 
 # Request/Response models
 class StartInterviewRequest(BaseModel):
@@ -44,6 +46,18 @@ class ProgressResponse(BaseModel):
 
 class ResultsResponse(BaseModel):
     results: Dict[str, Any]
+
+class SessionDataResponse(BaseModel):
+    session: Dict[str, Any]
+    responses: List[Dict[str, Any]]
+    final_results: Dict[str, Any]
+    conversation_summary: Optional[Dict[str, Any]] = None
+
+class SessionsListResponse(BaseModel):
+    sessions: List[Dict[str, Any]]
+
+class StatisticsResponse(BaseModel):
+    statistics: Dict[str, Any]
 
 @router.post("/start", response_model=StartInterviewResponse)
 async def start_interview(request: StartInterviewRequest):
@@ -123,3 +137,42 @@ async def reset_interview():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+# Database endpoints
+@router.get("/sessions", response_model=SessionsListResponse)
+async def get_all_sessions():
+    """Get all interview sessions"""
+    try:
+        sessions = database.get_all_sessions()
+        return SessionsListResponse(sessions=sessions)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get sessions: {str(e)}")
+
+@router.get("/sessions/{session_id}", response_model=SessionDataResponse)
+async def get_session_data(session_id: str):
+    """Get complete data for a specific session"""
+    try:
+        session_data = database.get_session_data(session_id)
+        if not session_data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Get conversation summary
+        conversation_summary = database.get_conversation_summary(session_id)
+        
+        # Add conversation summary to response
+        session_data["conversation_summary"] = conversation_summary.get("conversation_summary") if conversation_summary else None
+        
+        return SessionDataResponse(**session_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get session data: {str(e)}")
+
+@router.get("/statistics", response_model=StatisticsResponse)
+async def get_statistics():
+    """Get overall interview statistics"""
+    try:
+        statistics = database.get_session_statistics()
+        return StatisticsResponse(statistics=statistics)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")

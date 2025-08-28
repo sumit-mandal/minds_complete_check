@@ -39,13 +39,7 @@ class InterviewState(BaseModel):
     user_responses: List[Dict[str, Any]] = Field(default_factory=list)
     interview_complete: bool = Field(default=False)
 
-class TopicSelection(BaseModel):
-    """Model for selecting the next topic to cover"""
-    selected_domain: str = Field(description="Name of the domain to focus on")
-    selected_subdomain: str = Field(description="Name of the subdomain to focus on")
-    selected_skills: List[str] = Field(description="List of core skill names to assess")
-    reasoning: str = Field(description="Explanation for why these topics were selected")
-    priority_score: float = Field(description="Priority score for this selection (0-10)")
+
 
 class Question(BaseModel):
     """Model for generating interview questions"""
@@ -55,40 +49,7 @@ class Question(BaseModel):
     difficulty_level: str = Field(description="Easy, Medium, or Hard")
     expected_indicators: List[str] = Field(description="What to look for in the response")
 
-class ResponseEvaluation(BaseModel):
-    """Model for evaluating user responses"""
-    skill_scores: Dict[str, float] = Field(description="Scores for each assessed skill (0-10)")
-    confidence_level: float = Field(description="Confidence in the evaluation (0-1)")
-    reasoning: str = Field(description="Detailed reasoning for the scores")
-    follow_up_needed: bool = Field(description="Whether a follow-up question is needed")
-    follow_up_reason: Optional[str] = Field(description="Reason for follow-up if needed")
-    skills_covered: List[str] = Field(description="Skills that were adequately covered in this response")
-    
-    @classmethod
-    def from_llm_response(cls, llm_response):
-        """Create ResponseEvaluation from LLM response, handling string parsing"""
-        try:
-            # If skill_scores is a string, try to parse it
-            if isinstance(llm_response.get("skill_scores"), str):
-                try:
-                    import json
-                    skill_scores = json.loads(llm_response["skill_scores"])
-                    llm_response["skill_scores"] = skill_scores
-                except (json.JSONDecodeError, TypeError):
-                    # If parsing fails, create empty dict
-                    llm_response["skill_scores"] = {}
-            
-            return cls(**llm_response)
-        except Exception as e:
-            print(f"Error creating ResponseEvaluation: {e}")
-            # Return a default evaluation
-            return cls(
-                skill_scores={},
-                confidence_level=0.0,
-                reasoning="Error in evaluation",
-                follow_up_needed=False,
-                skills_covered=[]
-            )
+
 
 class InterviewSummary(BaseModel):
     """Model for summarizing the complete interview"""

@@ -1,9 +1,6 @@
-import getpass
 import os
-from utils.state_manager import TopicSelection, Question, ResponseEvaluation, InterviewSummary
+from utils.state_manager import Question, InterviewSummary
 from dotenv import load_dotenv
-import os
-import google.generativeai as genai
 import json
 
 load_dotenv()
@@ -17,11 +14,10 @@ llm = ChatGoogleGenerativeAI(
     max_tokens=None,
     timeout=None,
     max_retries=2,
-    google_api_key=os.getenv("API_KEY")
+    google_api_key=api_key
 )
 
 # Specialized LLM instances for different tasks
-topic_selector_llm = llm.with_structured_output(TopicSelection)
 question_generator_llm = llm.with_structured_output(Question)
 summarizer_llm = llm.with_structured_output(InterviewSummary)
 
@@ -32,7 +28,7 @@ evaluation_llm = ChatGoogleGenerativeAI(
     max_tokens=None,
     timeout=None,
     max_retries=2,
-    google_api_key=os.getenv("API_KEY")
+    google_api_key=api_key
 )
 
 # Custom evaluation function that doesn't use structured output
