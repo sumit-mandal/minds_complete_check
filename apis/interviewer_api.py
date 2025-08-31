@@ -4,13 +4,13 @@ from typing import Dict, Any, Optional, List
 import uuid
 from datetime import datetime
 
-from utils.simple_interviewer import SimpleAutomatedInterviewer
+from utils.langgraph_interviewer import LangGraphInterviewer
 from utils.database import InterviewDatabase
 
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
 
 # Global instances
-interviewer = SimpleAutomatedInterviewer(max_questions=3)  # Set max questions to 3
+interviewer = LangGraphInterviewer(max_questions=7)  # Set max questions to 7
 database = InterviewDatabase()  # Database instance
 
 # Request/Response models
