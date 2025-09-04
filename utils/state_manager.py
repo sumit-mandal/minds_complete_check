@@ -16,6 +16,7 @@ class CoreSkill(BaseModel):
     practical_applications: List[str] = Field(default_factory=list)
     level: SkillLevel = Field(default=SkillLevel.MEDIUM)
     assessment_history: List[Dict[str, Any]] = Field(default_factory=list)
+    asked_in_question: bool = Field(default=False)
 
 class Subdomain(BaseModel):
     name: str
@@ -123,6 +124,99 @@ class StateManager:
                         })
         
         return uncovered_skills
+    
+    def get_skills_never_asked_in_questions(self) -> List[Dict[str, Any]]:
+        """Get skills that have never been asked about in questions (only covered in answers)"""
+        never_asked_skills = []
+        
+        for domain in self.state.domains:
+            for subdomain in domain.subdomains:
+                for skill in subdomain.core_skills:
+                    if skill.covered and not skill.asked_in_question:
+                        never_asked_skills.append({
+                            "domain": domain.name,
+                            "subdomain": subdomain.name,
+                            "skill": skill.name,
+                            "level": skill.level,
+                            "knowledge_areas": skill.knowledge_areas,
+                            "practical_applications": skill.practical_applications,
+                            "score": skill.score,
+                            "covered": skill.covered,
+                            "asked_in_question": skill.asked_in_question
+                        })
+        
+        return never_asked_skills
+    
+    def get_skills_needing_direct_questions(self) -> List[Dict[str, Any]]:
+        """Get skills that need direct questions based on low scores or never being asked"""
+        skills_needing_questions = []
+        
+        for domain in self.state.domains:
+            for subdomain in domain.subdomains:
+                for skill in subdomain.core_skills:
+                    # Skills that need direct questions:
+                    # 1. Never asked about in questions (highest priority)
+                    # 2. Uncovered skills
+                    # 3. Low scores (below 5.0) but only if not already asked about
+                    needs_question = (
+                        not skill.asked_in_question or 
+                        not skill.covered
+                    )
+                    
+                    if needs_question:
+                        skills_needing_questions.append({
+                            "domain": domain.name,
+                            "subdomain": subdomain.name,
+                            "skill": skill.name,
+                            "level": skill.level,
+                            "knowledge_areas": skill.knowledge_areas,
+                            "practical_applications": skill.practical_applications,
+                            "score": skill.score,
+                            "covered": skill.covered,
+                            "asked_in_question": skill.asked_in_question,
+                            "priority_score": self._calculate_question_priority(skill)
+                        })
+        
+        # Sort by priority score (higher priority first)
+        skills_needing_questions.sort(key=lambda x: x["priority_score"], reverse=True)
+        return skills_needing_questions
+    
+    def _calculate_question_priority(self, skill) -> float:
+        """Calculate priority score for asking a question about a skill"""
+        priority = 0.0
+        
+        # Highest priority: never asked about in questions
+        if not skill.asked_in_question:
+            priority += 1000.0  # Much higher priority to ensure these are asked first
+        
+        # High priority: low scores
+        if skill.score < 3.0:
+            priority += 50.0
+        elif skill.score < 5.0:
+            priority += 30.0
+        elif skill.score < 7.0:
+            priority += 15.0
+        
+        # Medium priority: uncovered skills
+        if not skill.covered:
+            priority += 25.0
+        
+        # Lower priority: higher difficulty levels
+        if skill.level == SkillLevel.HARD:
+            priority += 10.0
+        elif skill.level == SkillLevel.MEDIUM:
+            priority += 5.0
+        
+        return priority
+    
+    def mark_skill_asked_in_question(self, skill_name: str):
+        """Mark a skill as having been asked about in a question"""
+        for domain in self.state.domains:
+            for subdomain in domain.subdomains:
+                for skill in subdomain.core_skills:
+                    if skill.name == skill_name:
+                        skill.asked_in_question = True
+                        return
     
     def get_covered_skills(self) -> List[Dict[str, Any]]:
         """Get all skills that have been covered"""

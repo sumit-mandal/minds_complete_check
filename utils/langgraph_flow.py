@@ -58,12 +58,12 @@ def start_interview(state: InterviewState) -> InterviewState:
     
     return {
         **state,
-        "current_question": "Please give us a brief introduction about yourself. Tell us about your background, experiences, and what brings you here today. This will help us understand your perspective and tailor the interview to your specific situation.",
+        "current_question": "Please tell us about yourself. What are your main interests and hobbies? Can you also share a bit about your childhood and how it has shaped who you are today? This will help us understand your background and tailor the interview to your specific situation.",
         "target_skills": [],
         "question_type": "introduction",
         "progress": state_manager.get_interview_progress(),
         "question_count": 0,
-        "interview_started": True,
+        "interview_started": False,
         "interview_complete": False,
         "state_manager_data": serialize_state_manager(state_manager)
     }
@@ -76,6 +76,10 @@ def evaluate_response(state: InterviewState) -> InterviewState:
     
     # Reconstruct state manager
     state_manager = deserialize_state_manager(state["state_manager_data"])
+    
+    # Mark interview as started after first response
+    if not state.get("interview_started", False):
+        state["interview_started"] = True
     
     # Evaluate the response
     evaluation = evaluate_response_comprehensive(user_response, state_manager)
@@ -223,11 +227,11 @@ def should_evaluate_response(state: InterviewState) -> str:
 
 def should_start_interview(state: InterviewState) -> str:
     """Determine if we should start interview or go directly to evaluation"""
-    if state.get("interview_started", False):
-        # Interview already started, go directly to evaluation
+    if state.get("user_response"):
+        # Have a response, go to evaluation
         return "evaluate"
     else:
-        # First time, start the interview
+        # No response yet, start the interview
         return "start"
 
 def should_generate_question(state: InterviewState) -> str:
@@ -270,6 +274,7 @@ def deserialize_state_manager(data: Dict[str, Any]) -> StateManager:
                     name=skill_data["name"],
                     score=skill_data.get("score", 0.0),
                     covered=skill_data.get("covered", False),
+                    asked_in_question=skill_data.get("asked_in_question", False),
                     knowledge_areas=skill_data.get("knowledge_areas", []),
                     practical_applications=skill_data.get("practical_applications", []),
                     level=SkillLevel(skill_data.get("level", "Medium")),
@@ -380,6 +385,10 @@ def get_next_question_contextual(state_manager: StateManager, user_response: str
     # Select skills to target based on context
     target_skills = select_target_skills_contextual(state_manager, uncovered_skills, evaluation)
     
+    # NEW: Mark these skills as asked about in questions
+    for skill_info in target_skills:
+        state_manager.mark_skill_asked_in_question(skill_info["skill"])
+    
     # Generate contextual question
     skill_details = []
     for skill_info in target_skills:
@@ -406,6 +415,7 @@ Guidelines for question generation:
 5. Ask for specific examples or experiences related to the target skills
 6. Make it open-ended enough to allow detailed responses
 7. Connect to their previous response when possible
+8. IMPORTANT: Ensure the question directly addresses the target skills to avoid topic skipping
 
 Generate a question that naturally follows from their previous response and assesses the target skills."""),
             ("human", "Please generate a contextual interview question.")
@@ -438,12 +448,16 @@ Generate a question that naturally follows from their previous response and asse
         }
 
 def select_target_skills_contextual(state_manager: StateManager, uncovered_skills: List[Dict], evaluation: Dict) -> List[Dict]:
-    """Select target skills based on context and previous response"""
+    """Select target skills based on context and previous response, ensuring no topics are skipped"""
     
     # If this is the first question after introduction, prioritize skills that weren't covered
     if not evaluation or not evaluation.get("skill_scores"):
         # Take first 2-3 uncovered skills
         return uncovered_skills[:3]
+    
+    # NEW LOGIC: Use the enhanced StateManager methods to ensure no topics are skipped
+    # Get skills that need direct questions (highest priority)
+    skills_needing_questions = state_manager.get_skills_needing_direct_questions()
     
     # Get skills that were scored in the last response
     last_skills_covered = evaluation.get("skill_scores", {}).keys()
@@ -452,7 +466,7 @@ def select_target_skills_contextual(state_manager: StateManager, uncovered_skill
     related_skills = []
     unrelated_skills = []
     
-    for skill_info in uncovered_skills:
+    for skill_info in skills_needing_questions:
         skill_name = skill_info["skill"]
         
         # Check if this skill is related to previously covered skills
@@ -476,23 +490,42 @@ def select_target_skills_contextual(state_manager: StateManager, uncovered_skill
         else:
             unrelated_skills.append(skill_info)
     
-    # Prioritize related skills first, then add some unrelated ones for diversity
+    # Build target skills list prioritizing never-asked and low-scored skills
     target_skills = []
     
-    # Add 1-2 related skills if available
-    if related_skills:
-        target_skills.extend(related_skills[:2])
+    # First, add high-priority skills that need direct questions
+    if skills_needing_questions:
+        # Take top 2-3 skills that need questions
+        target_skills.extend(skills_needing_questions[:3])
     
-    # Add 1-2 unrelated skills for diversity
-    if unrelated_skills and len(target_skills) < 3:
-        target_skills.extend(unrelated_skills[:3-len(target_skills)])
-    
-    # If we don't have enough skills, add more from uncovered
+    # If we still need more skills, add from uncovered skills
     if len(target_skills) < 2:
-        remaining = [s for s in uncovered_skills if s not in target_skills]
-        target_skills.extend(remaining[:2-len(target_skills)])
+        remaining_uncovered = [s for s in uncovered_skills if s not in target_skills]
+        
+        # Sort by score (lower scores first) to prioritize skills that need more assessment
+        remaining_uncovered.sort(key=lambda x: x.get("score", 0.0))
+        
+        # Add 1-2 related skills if available
+        related_remaining = [s for s in remaining_uncovered if s in related_skills]
+        if related_remaining:
+            target_skills.extend(related_remaining[:1])
+        
+        # Add unrelated skills for diversity
+        unrelated_remaining = [s for s in remaining_uncovered if s in unrelated_skills]
+        if unrelated_remaining and len(target_skills) < 3:
+            target_skills.extend(unrelated_remaining[:3-len(target_skills)])
+        
+        # If we still don't have enough, add more from uncovered
+        if len(target_skills) < 2:
+            final_remaining = [s for s in remaining_uncovered if s not in target_skills]
+            target_skills.extend(final_remaining[:2-len(target_skills)])
     
     return target_skills[:3]  # Limit to 3 skills max
+
+def get_skills_never_asked_in_questions(state_manager: StateManager) -> List[Dict[str, Any]]:
+    """Get skills that have never been asked about in questions (only covered in answers)"""
+    # Use the new StateManager method
+    return state_manager.get_skills_never_asked_in_questions()
 
 def get_completion_reason(progress: Dict[str, Any], question_count: int, max_questions: int) -> str:
     """Determine why the interview completed"""
@@ -585,7 +618,7 @@ def build_interview_graph():
         "start_interview",
         should_start_interview,
         {
-            "start": "evaluate_response",
+            "start": END,  # Show introduction question and end
             "evaluate": "evaluate_response"
         }
     )
