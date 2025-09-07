@@ -8,6 +8,16 @@ class SkillLevel(str, Enum):
     MEDIUM = "Medium"
     HARD = "Hard"
 
+class Persona(str, Enum):
+    THERAPIST = "therapist"
+    CLOSE_FRIEND = "close_friend"
+    FAMILY_MEMBER = "family_member"
+    MENTOR = "mentor"
+    COLLEAGUE = "colleague"
+    COACH = "coach"
+    PROFESSOR = "professor"
+    MANAGER = "manager"
+
 class CoreSkill(BaseModel):
     name: str
     score: float = Field(default=0.0, ge=0.0, le=10.0)
@@ -39,6 +49,7 @@ class InterviewState(BaseModel):
     session_id: Optional[str] = None
     user_responses: List[Dict[str, Any]] = Field(default_factory=list)
     interview_complete: bool = Field(default=False)
+    persona: Persona = Field(default=Persona.MENTOR)
 
 
 
@@ -65,10 +76,10 @@ class InterviewSummary(BaseModel):
 class StateManager:
     """Manages the interview state and provides utility methods"""
     
-    def __init__(self, interview_domains: Dict[str, Any]):
-        self.state = self._initialize_state(interview_domains)
+    def __init__(self, interview_domains: Dict[str, Any], persona: Persona = Persona.MENTOR):
+        self.state = self._initialize_state(interview_domains, persona)
     
-    def _initialize_state(self, interview_domains: Dict[str, Any]) -> InterviewState:
+    def _initialize_state(self, interview_domains: Dict[str, Any], persona: Persona) -> InterviewState:
         """Initialize the interview state from the domains data"""
         domains = []
         total_skills = 0
@@ -103,7 +114,8 @@ class StateManager:
         
         return InterviewState(
             domains=domains,
-            total_skills=total_skills
+            total_skills=total_skills,
+            persona=persona
         )
     
     def get_uncovered_skills(self) -> List[Dict[str, Any]]:

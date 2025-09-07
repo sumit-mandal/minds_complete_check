@@ -6,6 +6,7 @@ from datetime import datetime
 
 from utils.langgraph_interviewer import LangGraphInterviewer
 from utils.database import InterviewDatabase
+from utils.state_manager import Persona
 
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
 
@@ -16,6 +17,7 @@ database = InterviewDatabase()  # Database instance
 # Request/Response models
 class StartInterviewRequest(BaseModel):
     session_id: Optional[str] = None
+    persona: Optional[Persona] = Persona.MENTOR
 
 class StartInterviewResponse(BaseModel):
     session_id: str
@@ -64,7 +66,8 @@ async def start_interview(request: StartInterviewRequest):
     """Start a new interview session"""
     try:
         session_id = request.session_id or f"session_{uuid.uuid4().hex[:8]}"
-        result = interviewer.start_interview(session_id)
+        persona = request.persona or Persona.MENTOR
+        result = interviewer.start_interview(session_id, persona)
         
         return StartInterviewResponse(
             session_id=result["session_id"],

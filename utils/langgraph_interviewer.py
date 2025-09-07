@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, TypedDict
 from enum import Enum
 
-from utils.state_manager import StateManager
+from utils.state_manager import StateManager, Persona
 from utils.graph_3_llm_helper import (
     question_generator_llm, 
     evaluation_llm,
@@ -28,7 +28,7 @@ class LangGraphInterviewer:
         self.graph = build_interview_graph()
         self.session_states = {}  # In-memory session state storage
     
-    def start_interview(self, session_id: str = None) -> Dict[str, Any]:
+    def start_interview(self, session_id: str = None, persona: Persona = Persona.MENTOR, target_skills: List[str] = None) -> Dict[str, Any]:
         """Start a new interview session"""
         
         if session_id is None:
@@ -38,7 +38,7 @@ class LangGraphInterviewer:
         initial_state = InterviewState(
             session_id=session_id,
             current_question="",
-            target_skills=[],
+            target_skills=target_skills or [],  # Use provided target skills or empty list
             question_type="",
             user_response=None,
             evaluation=None,
@@ -51,7 +51,8 @@ class LangGraphInterviewer:
             completion_reason=None,
             last_response=None,
             interview_started=False,
-            state_manager_data=None
+            state_manager_data=None,
+            persona=persona
         )
         
         # Run the graph
@@ -96,7 +97,8 @@ class LangGraphInterviewer:
             completion_reason=current_state.get("completion_reason"),
             last_response=current_state.get("last_response"),
             interview_started=current_state.get("interview_started", True),
-            state_manager_data=current_state.get("state_manager_data")
+            state_manager_data=current_state.get("state_manager_data"),
+            persona=current_state.get("persona", Persona.MENTOR)
         )
         
         # Run the graph
