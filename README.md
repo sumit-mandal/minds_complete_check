@@ -76,19 +76,37 @@ Start the FastAPI server:
 uvicorn main:app --reload
 ```
 
-Available endpoints:
+The API will be available at `http://localhost:8000` with automatic documentation at `http://localhost:8000/docs`.
 
-#### Start Interview
+#### Core Interview Endpoints
+
+##### 1. Start Interview
 ```http
 POST /api/interviewer/start
 Content-Type: application/json
 
 {
-  "session_id": "optional_custom_session_id"
+  "session_id": "optional_custom_session_id",
+  "persona": "MENTOR"  // Optional: MENTOR, COLLEAGUE, or FRIEND
 }
 ```
 
-#### Submit Response
+**Response:**
+```json
+{
+  "session_id": "session_abc123",
+  "current_question": "Describe a challenging situation where you had to maintain clear thinking under pressure...",
+  "target_skills": ["Clarity of Thought", "Problem-Solving Confidence"],
+  "question_type": "behavioral",
+  "progress": {
+    "progress_percentage": 0.0,
+    "covered_skills": 0,
+    "total_skills": 12
+  }
+}
+```
+
+##### 2. Submit Response
 ```http
 POST /api/interviewer/submit
 Content-Type: application/json
@@ -99,19 +117,263 @@ Content-Type: application/json
 }
 ```
 
-#### Get Progress
+**Response (Interview Continuing):**
+```json
+{
+  "interview_complete": false,
+  "current_question": "Tell me about a time when you had to build trust with someone new...",
+  "target_skills": ["Trust Initiation", "Emotional Adaptability"],
+  "question_type": "situational",
+  "progress": {
+    "progress_percentage": 16.7,
+    "covered_skills": 2,
+    "total_skills": 12
+  },
+  "last_evaluation": {
+    "skill_scores": {
+      "Clarity of Thought": 7.5,
+      "Problem-Solving Confidence": 8.0
+    },
+    "confidence_level": 0.85,
+    "reasoning": "Strong demonstration of maintaining focus under pressure...",
+    "skills_covered": ["Clarity of Thought", "Problem-Solving Confidence"]
+  },
+  "question_number": 2,
+  "max_questions": 7
+}
+```
+
+**Response (Interview Complete):**
+```json
+{
+  "interview_complete": true,
+  "summary": {
+    "total_skills_assessed": 12,
+    "average_score": 7.2,
+    "strengths": ["Problem-Solving Confidence", "Emotional Adaptability"],
+    "areas_for_improvement": ["Trust Maintenance", "Mood Consistency"],
+    "recommendations": ["Focus on building long-term relationships..."]
+  },
+  "final_results": {
+    "skill_scores": {
+      "Clarity of Thought": 7.5,
+      "Problem-Solving Confidence": 8.0,
+      "Trust Initiation": 6.5
+    },
+    "overall_assessment": "Strong candidate with room for growth in relational skills"
+  },
+  "completion_reason": "All skills assessed"
+}
+```
+
+##### 3. Get Progress
 ```http
 GET /api/interviewer/progress/{session_id}
 ```
 
-#### Get Results
+**Response:**
+```json
+{
+  "progress": {
+    "progress_percentage": 50.0,
+    "covered_skills": 6,
+    "total_skills": 12,
+    "current_question_number": 4,
+    "max_questions": 7
+  }
+}
+```
+
+##### 4. Get Results
 ```http
 GET /api/interviewer/results/{session_id}
 ```
 
-#### Reset Interview
+**Response:**
+```json
+{
+  "results": {
+    "skill_scores": {
+      "Clarity of Thought": 7.5,
+      "Problem-Solving Confidence": 8.0
+    },
+    "assessment_history": [
+      {
+        "skill": "Clarity of Thought",
+        "score": 7.5,
+        "question_number": 1,
+        "reasoning": "Demonstrated clear thinking under pressure"
+      }
+    ]
+  }
+}
+```
+
+##### 5. Reset Interview
 ```http
 POST /api/interviewer/reset
+```
+
+**Response:**
+```json
+{
+  "message": "Interview reset successfully"
+}
+```
+
+##### 6. Health Check
+```http
+GET /api/interviewer/health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-15T10:30:00.000Z"
+}
+```
+
+#### Database & Analytics Endpoints
+
+##### 7. Get All Sessions
+```http
+GET /api/interviewer/sessions
+```
+
+**Response:**
+```json
+{
+  "sessions": [
+    {
+      "session_id": "session_abc123",
+      "created_at": "2024-01-15T10:00:00.000Z",
+      "status": "completed",
+      "total_questions": 5,
+      "final_score": 7.2
+    }
+  ]
+}
+```
+
+##### 8. Get Session Data
+```http
+GET /api/interviewer/sessions/{session_id}
+```
+
+**Response:**
+```json
+{
+  "session": {
+    "session_id": "session_abc123",
+    "created_at": "2024-01-15T10:00:00.000Z",
+    "status": "completed",
+    "total_questions": 5,
+    "final_score": 7.2
+  },
+  "responses": [
+    {
+      "question_number": 1,
+      "question": "Describe a challenging situation...",
+      "user_response": "In my previous role...",
+      "evaluation": {
+        "skill_scores": {"Clarity of Thought": 7.5},
+        "reasoning": "Strong demonstration..."
+      }
+    }
+  ],
+  "final_results": {
+    "skill_scores": {"Clarity of Thought": 7.5},
+    "overall_assessment": "Strong candidate..."
+  },
+  "conversation_summary": "The candidate demonstrated strong problem-solving skills..."
+}
+```
+
+##### 9. Get Statistics
+```http
+GET /api/interviewer/statistics
+```
+
+**Response:**
+```json
+{
+  "statistics": {
+    "total_sessions": 25,
+    "completed_sessions": 23,
+    "average_completion_time": "12.5 minutes",
+    "average_final_score": 7.1,
+    "most_assessed_skills": ["Problem-Solving Confidence", "Clarity of Thought"],
+    "completion_rate": 0.92
+  }
+}
+```
+
+#### Error Handling
+
+The API returns standard HTTP status codes:
+
+- **200**: Success
+- **400**: Bad Request (e.g., empty user response)
+- **404**: Not Found (e.g., session not found)
+- **500**: Internal Server Error
+
+**Error Response Format:**
+```json
+{
+  "detail": "Error message describing what went wrong"
+}
+```
+
+#### CORS Configuration
+
+The API is configured with CORS middleware to allow frontend integration:
+
+```javascript
+// CORS is enabled for all origins
+// Frontend can make requests from any domain
+// Credentials are allowed
+// All HTTP methods and headers are permitted
+```
+
+#### Frontend Integration Example
+
+```javascript
+// Start an interview
+const startInterview = async () => {
+  const response = await fetch('http://localhost:8000/api/interviewer/start', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      session_id: 'my-custom-session-id',
+      persona: 'MENTOR'
+    })
+  });
+  return await response.json();
+};
+
+// Submit a response
+const submitResponse = async (sessionId, userResponse) => {
+  const response = await fetch('http://localhost:8000/api/interviewer/submit', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+      user_response: userResponse
+    })
+  });
+  return await response.json();
+};
+
+// Get progress
+const getProgress = async (sessionId) => {
+  const response = await fetch(`http://localhost:8000/api/interviewer/progress/${sessionId}`);
+  return await response.json();
+};
 ```
 
 ## Interview Domains

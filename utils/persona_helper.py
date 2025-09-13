@@ -129,18 +129,14 @@ When generating questions:
 8. Connect authentically to their previous response
 9. Vary your approach, structure, and style every time
 10. IMPORTANT: Ensure the question directly addresses the target skills to avoid topic skipping
-11. CRITICAL: Keep the question under 300 characters total
+11. CRITICAL: Keep the question concise and under 300 characters limit and natural
 12. Sound like a real person having a conversation, not a scripton
 
 Generate a unique, authentic question that naturally follows from their previous response and assesses the target skills, while maintaining the {persona.value.replace('_', ' ')} persona throughout. Make it feel fresh and personal every time."""
     
     @classmethod
     def format_question_with_persona(cls, question: str, persona: Persona) -> str:
-        """Format a question with persona-specific language (max 300 chars)"""
-        # Ensure the question is already under 150 characters
-        if len(question) > 300:
-            question = question[:297] + "..."
-        
-        # For persona-specific formatting, we'll keep it minimal to stay under 150 chars
+        """Format a question with persona-specific language"""
         # The persona style should already be incorporated in the AI generation
+        # No manual character limit enforcement - let the LLM handle it through prompts
         return question

@@ -124,7 +124,7 @@ Create a warm, comfortable introduction question that:
 - Feels {random_style}
 - Makes the person feel comfortable and at ease
 - Shows genuine interest in getting to know them personally
-- Is under 300 characters total
+- Is concise and to the point
 - Sounds like a natural, friendly conversation starter
 - Focuses on their personal life, hobbies, childhood, or interests
 - Avoids abstract or creative questions
@@ -141,9 +141,6 @@ Make it feel like you're genuinely interested in getting to know them as a perso
         # Check if question_data is valid and extract question
         if question_data and hasattr(question_data, 'question_text') and question_data.question_text:
             question = question_data.question_text.strip()
-            # Ensure it's under 300 characters
-            if len(question) > 300:
-                question = question[:297] + "..."
             return question
         else:
             raise ValueError("Invalid question data returned from LLM")
@@ -160,7 +157,7 @@ Create a spontaneous, natural introduction question that:
 - Is completely unique and not formulaic
 - Shows genuine interest in the person
 - Varies dramatically in style and approach
-- Is under 300 characters
+- Is concise and natural
 - Sounds authentic and human
 
 Be creative and make it feel like a real conversation starter."""),
@@ -171,8 +168,6 @@ Be creative and make it feel like a real conversation starter."""),
             
             if question_data and hasattr(question_data, 'question_text') and question_data.question_text:
                 question = question_data.question_text.strip()
-                if len(question) > 300:
-                    question = question[:297] + "..."
                 return question
             else:
                 raise ValueError("Invalid question data from creative prompt")
@@ -611,7 +606,7 @@ Generate a question that naturally follows from their previous response and asse
         try:
             # Try with a simpler prompt
             simple_prompt = ChatPromptTemplate.from_messages([
-                ("system", f"Generate a brief interview question as a {persona.value.replace('_', ' ')} about {skill_details[0]['name'] if skill_details else 'skills'}. Keep it under 150 characters."),
+                ("system", f"Generate a brief interview question as a {persona.value.replace('_', ' ')} about {skill_details[0]['name'] if skill_details else 'skills'}. Keep it concise and natural."),
                 ("human", "Generate a question.")
             ])
             
@@ -619,9 +614,8 @@ Generate a question that naturally follows from their previous response and asse
             
             if question_data and hasattr(question_data, 'question_text') and question_data.question_text:
                 question = question_data.question_text.strip()
-                formatted_question = PersonaHelper.format_question_with_persona(question, persona)
                 return {
-                    "question": formatted_question,
+                    "question": question,
                     "target_skills": [skill["name"] for skill in skill_details],
                     "question_type": "behavioral"
                 }
