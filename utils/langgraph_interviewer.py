@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, TypedDict
 from enum import Enum
 
-from utils.state_manager import StateManager, Persona
+from utils.state_manager import StateManager, Persona, CandidatePersona
 from utils.graph_3_llm_helper import (
     question_generator_llm, 
     evaluation_llm,
@@ -28,7 +28,7 @@ class LangGraphInterviewer:
         self.graph = build_interview_graph()
         self.session_states = {}  # In-memory session state storage
     
-    def start_interview(self, session_id: str = None, persona: Persona = Persona.MENTOR, target_skills: List[str] = None) -> Dict[str, Any]:
+    def start_interview(self, session_id: str = None, persona: Persona = Persona.MENTOR, candidate_persona: CandidatePersona = CandidatePersona.PROFESSIONAL, target_skills: List[str] = None) -> Dict[str, Any]:
         """Start a new interview session"""
         
         if session_id is None:
@@ -52,7 +52,8 @@ class LangGraphInterviewer:
             last_response=None,
             interview_started=False,
             state_manager_data=None,
-            persona=persona
+            persona=persona,
+            candidate_persona=candidate_persona
         )
         
         # Run the graph
@@ -98,7 +99,8 @@ class LangGraphInterviewer:
             last_response=current_state.get("last_response"),
             interview_started=current_state.get("interview_started", True),
             state_manager_data=current_state.get("state_manager_data"),
-            persona=current_state.get("persona", Persona.MENTOR)
+            persona=current_state.get("persona", Persona.MENTOR),
+            candidate_persona=current_state.get("candidate_persona", CandidatePersona.PROFESSIONAL)
         )
         
         # Run the graph

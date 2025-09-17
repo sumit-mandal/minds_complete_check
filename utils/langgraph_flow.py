@@ -12,7 +12,7 @@ from enum import Enum
 from langgraph.graph import StateGraph, END
 from langchain_core.prompts import ChatPromptTemplate
 
-from utils.state_manager import StateManager, Persona
+from utils.state_manager import StateManager, Persona, CandidatePersona
 from utils.persona_helper import PersonaHelper
 from utils.graph_3_llm_helper import (
     question_generator_llm, 
@@ -72,127 +72,83 @@ class InterviewState(TypedDict):
     interview_started: bool
     state_manager_data: Optional[Dict[str, Any]]
     persona: Persona
+    candidate_persona: CandidatePersona
 
-def generate_introduction_question(persona: Persona) -> str:
-    """Generate completely dynamic AI-based introduction question with persona and 300 char limit"""
-    import random
-    import time
+def generate_introduction_question(persona: Persona, candidate_persona: CandidatePersona) -> str:
+    """Generate completely dynamic AI-based introduction question with persona and candidate context"""
     
     try:
-        # Focus on asking for name first, then personal details like hobbies, childhood, etc.
-        random_greetings = [
-            "Hello there!", "Hi!", "Hey!", "Welcome!", "Nice to meet you!", 
-            "Hello!", "Hi there!", "Hey there!", "Welcome!", "Great to meet you!"
-        ]
+        # Get persona-specific communication style
+        persona_style = PersonaHelper.get_persona_style(persona)
+        candidate_context = PersonaHelper.get_candidate_persona_context(candidate_persona)
         
-        random_name_approaches = [
-            "What's your name?", "What should I call you?", "What's your name?", 
-            "What do you like to be called?", "What's your name?", "What should I call you?",
-            "What's your name?", "What do you prefer to be called?", "What's your name?",
-            "What should I call you?", "What's your name?", "What do you like to be called?"
-        ]
-        
-        random_personal_topics = [
-            "hobbies and interests", "what you enjoy doing", "your passions", 
-            "favorite activities", "what brings you joy", "personal interests",
-            "what you're curious about", "things you love doing", 
-            "what excites you", "your favorite pastimes", "what you're into",
-            "activities you enjoy", "what you find interesting", "your childhood",
-            "where you grew up", "your background", "what you're passionate about"
-        ]
-        
-        random_question_styles = [
-            "casual and friendly", "warm and welcoming", "genuine and interested", 
-            "relaxed and conversational", "comfortable and open", "natural and spontaneous",
-            "friendly and engaging", "curious and warm", "personable and sincere",
-            "conversational and comfortable", "interested and welcoming", "warm and genuine"
-        ]
-        
-        random_greeting = random.choice(random_greetings)
-        random_name_approach = random.choice(random_name_approaches)
-        random_topic = random.choice(random_personal_topics)
-        random_style = random.choice(random_question_styles)
-        
-        # Create introduction questions that ask for name first, then personal details
+        # Create a completely AI-driven introduction prompt
         introduction_prompt = ChatPromptTemplate.from_messages([
-            ("system", f"""You are a {persona.value.replace('_', ' ')} meeting someone new.
+            ("system", f"""You are an expert interviewer embodying the role of a {persona.value.replace('_', ' ')}.
 
-Create a warm, comfortable introduction question that:
-- Starts with a friendly greeting like "{random_greeting}"
-- Asks for their name: "{random_name_approach}"
-- Then asks about their {random_topic}
-- Feels {random_style}
-- Makes the person feel comfortable and at ease
-- Shows genuine interest in getting to know them personally
-- Is concise and to the point
-- Sounds like a natural, friendly conversation starter
-- Focuses on their personal life, hobbies, childhood, or interests
-- Avoids abstract or creative questions
-- Varies in structure and approach
+Your communication style should be:
+- Tone: {persona_style['tone']}
+- Approach: {persona_style['approach']}
+- Language: {persona_style['language_style']}
 
-Make it feel like you're genuinely interested in getting to know them as a person. Be creative with how you ask about their {random_topic}."""),
-            ("human", f"Generate a warm, personal introduction question that asks for their name and then about their {random_topic}. Make it comfortable and welcoming.")
+{candidate_context}
+
+Create a warm, engaging introduction question that:
+1. Starts with a natural, friendly greeting
+2. Asks for their name in a comfortable way
+3. Asks about something personal to help them feel at ease
+4. Is contextually appropriate for their background (student vs professional)
+5. Feels authentic and conversational
+6. Is under 300 characters total
+7. Varies every time - be creative and unique
+8. Makes them feel comfortable and excited to share
+
+Generate a unique, authentic introduction question that naturally flows and feels personal."""),
+            ("human", "Please create a warm introduction question for starting our conversation.")
         ])
         
+        # Generate the introduction question
         question_data = question_generator_llm.invoke(
             introduction_prompt.format_messages()
         )
         
-        # Check if question_data is valid and extract question
-        if question_data and hasattr(question_data, 'question_text') and question_data.question_text:
-            question = question_data.question_text.strip()
-            return question
+        # Extract question text from the response
+        if hasattr(question_data, 'content'):
+            question_text = question_data.content.strip()
+        elif hasattr(question_data, 'question_text'):
+            question_text = question_data.question_text.strip()
         else:
-            raise ValueError("Invalid question data returned from LLM")
+            question_text = str(question_data).strip()
+        
+        # If the response contains structured data, extract just the question
+        if 'question_text=' in question_text:
+            import re
+            match = re.search(r'question_text="([^"]*)"', question_text)
+            if match:
+                question_text = match.group(1)
+        
+        # Ensure it's under 300 characters
+        if len(question_text) > 300:
+            question_text = question_text[:297] + "..."
+        
+        return question_text
+        
     except Exception as e:
-        # If AI generation fails, try a completely different approach
-        print(f"Warning: LLM introduction generation failed: {e}")
+        print(f"Error generating introduction question: {e}")
+        # Fallback to a simple question
+        # Generate a simple fallback question using AI
         try:
-            # Try with a completely different, more creative prompt
-            creative_prompt = ChatPromptTemplate.from_messages([
-                ("system", f"""You are a {persona.value.replace('_', ' ')} meeting someone new. 
-
-Create a spontaneous, natural introduction question that:
-- Feels like something you'd actually say in real life
-- Is completely unique and not formulaic
-- Shows genuine interest in the person
-- Varies dramatically in style and approach
-- Is concise and natural
-- Sounds authentic and human
-
-Be creative and make it feel like a real conversation starter."""),
-                ("human", "What would you naturally say to start getting to know someone?")
+            fallback_prompt = ChatPromptTemplate.from_messages([
+                ("system", "Generate a simple, warm introduction question that asks for their name and something personal. Keep it under 100 characters."),
+                ("human", "Create a brief introduction question.")
             ])
-            
-            question_data = question_generator_llm.invoke(creative_prompt.format_messages())
-            
-            if question_data and hasattr(question_data, 'question_text') and question_data.question_text:
-                question = question_data.question_text.strip()
-                return question
+            fallback_data = question_generator_llm.invoke(fallback_prompt.format_messages())
+            if hasattr(fallback_data, 'content'):
+                return fallback_data.content.strip()
             else:
-                raise ValueError("Invalid question data from creative prompt")
-        except Exception as e2:
-            print(f"Warning: Creative prompt also failed: {e2}")
-            # Final fallback - completely random and dynamic
-            fallback_questions = [
-                f"Hi! I'm excited to learn about your journey. What brings you here today?",
-                f"Hello! Tell me about yourself and what you're passionate about.",
-                f"Great to meet you! What's your story and what excites you most?",
-                f"Welcome! I'd love to hear about your background and interests.",
-                f"Hi there! What's been the most interesting part of your journey so far?",
-                f"Hey! What's got you excited about this opportunity?",
-                f"Hello there! I'm curious about your path - what's led you here?",
-                f"Hi! What's the most interesting thing about your background?",
-                f"Great to meet you! What's your story?",
-                f"Welcome! Tell me what makes you unique.",
-                f"So, what's the most unexpected thing about your journey?",
-                f"Hey there! What's been keeping you busy lately?",
-                f"Hi! What's something cool about you that I should know?",
-                f"Hello! What's the most interesting challenge you've faced?",
-                f"Hey! What's got you most excited these days?"
-            ]
-            import random
-            return random.choice(fallback_questions)
+                return str(fallback_data).strip()
+        except:
+            return "Hi! What's your name and what brings you here today?"
 
 def start_interview(state: InterviewState) -> InterviewState:
     """Start a new interview session or continue existing one"""
@@ -209,14 +165,16 @@ def start_interview(state: InterviewState) -> InterviewState:
     domains_to_use = filter_domains_by_target_skills(target_skills)
     
     # Create new state manager for new interview with persona and filtered domains
-    state_manager = StateManager(domains_to_use, persona)
+    candidate_persona = state.get("candidate_persona", CandidatePersona.PROFESSIONAL)
+    state_manager = StateManager(domains_to_use, persona, candidate_persona)
     
     # Save session start to database
     database = InterviewDatabase()
     database.save_session_start(session_id, max_questions)
     
-    # Generate AI-based introduction question with persona and character limit
-    introduction_question = generate_introduction_question(persona)
+    # Generate AI-based introduction question with persona and candidate context
+    candidate_persona = state.get("candidate_persona", CandidatePersona.PROFESSIONAL)
+    introduction_question = generate_introduction_question(persona, candidate_persona)
     
     return {
         **state,
@@ -371,7 +329,8 @@ def generate_question(state: InterviewState) -> InterviewState:
     
     # Get next question
     persona = state.get("persona", Persona.MENTOR)
-    next_question_result = get_next_question_contextual(state_manager, state["last_response"], state["evaluation"], persona)
+    candidate_persona = state.get("candidate_persona", CandidatePersona.PROFESSIONAL)
+    next_question_result = get_next_question_contextual(state_manager, state["last_response"], state["evaluation"], persona, candidate_persona)
     
     return {
         **state,
@@ -419,7 +378,8 @@ def serialize_state_manager(state_manager: StateManager) -> Dict[str, Any]:
         "session_id": state_manager.state.session_id,
         "user_responses": state_manager.state.user_responses,
         "interview_complete": state_manager.state.interview_complete,
-        "persona": state_manager.state.persona
+        "persona": state_manager.state.persona,
+        "candidate_persona": state_manager.state.candidate_persona
     }
 
 def deserialize_state_manager(data: Dict[str, Any]) -> StateManager:
@@ -463,7 +423,8 @@ def deserialize_state_manager(data: Dict[str, Any]) -> StateManager:
     
     # Create state manager with the reconstructed state
     persona = Persona(data.get("persona", "mentor"))
-    state_manager = StateManager(INTERVIEW_DOMAINS, persona)
+    candidate_persona = CandidatePersona(data.get("candidate_persona", "professional"))
+    state_manager = StateManager(INTERVIEW_DOMAINS, persona, candidate_persona)
     state_manager.state = StateManagerInterviewState(
         domains=domains,
         current_domain=data.get("current_domain"),
@@ -475,7 +436,8 @@ def deserialize_state_manager(data: Dict[str, Any]) -> StateManager:
         session_id=data.get("session_id"),
         user_responses=data.get("user_responses", []),
         interview_complete=data.get("interview_complete", False),
-        persona=persona
+        persona=persona,
+        candidate_persona=candidate_persona
     )
     
 
@@ -535,7 +497,7 @@ def update_state_manager(state_manager: StateManager, user_response: str, evalua
     if isinstance(skill_scores, dict):
         state_manager.update_skill_scores(skill_scores, response_data)
 
-def get_next_question_contextual(state_manager: StateManager, user_response: str, evaluation: Dict[str, Any], persona: Persona) -> Dict[str, Any]:
+def get_next_question_contextual(state_manager: StateManager, user_response: str, evaluation: Dict[str, Any], persona: Persona, candidate_persona: CandidatePersona) -> Dict[str, Any]:
     """Get the next question based on previous response and remaining skills"""
     
     # Get uncovered skills
@@ -568,7 +530,7 @@ def get_next_question_contextual(state_manager: StateManager, user_response: str
     
     try:
         # Get persona-specific prompt
-        persona_prompt = PersonaHelper.get_question_generation_prompt(persona)
+        persona_prompt = PersonaHelper.get_question_generation_prompt(persona, candidate_persona)
         
         question_prompt = ChatPromptTemplate.from_messages([
             ("system", f"""{persona_prompt}
@@ -623,14 +585,31 @@ Generate a question that naturally follows from their previous response and asse
                 raise ValueError("Simple prompt also failed")
         except Exception as e2:
             print(f"Warning: All AI generation failed: {e2}")
-            # Last resort: generate a very basic question
-            basic_question = "Tell me about your experience."
-            formatted_basic = PersonaHelper.format_question_with_persona(basic_question, persona)
-            return {
-                "question": formatted_basic,
-                "target_skills": [skill["name"] for skill in skill_details],
-                "question_type": "behavioral"
-            }
+            # Last resort: generate a very basic question using AI
+            try:
+                emergency_prompt = ChatPromptTemplate.from_messages([
+                    ("system", f"Generate a simple interview question as a {persona.value.replace('_', ' ')} about {skill_details[0]['name'] if skill_details else 'their experience'}. Just the question, nothing else."),
+                    ("human", "Generate a simple question.")
+                ])
+                emergency_data = question_generator_llm.invoke(emergency_prompt.format_messages())
+                if hasattr(emergency_data, 'content'):
+                    emergency_question = emergency_data.content.strip()
+                else:
+                    emergency_question = str(emergency_data).strip()
+                
+                return {
+                    "question": emergency_question,
+                    "target_skills": [skill["name"] for skill in skill_details],
+                    "question_type": "behavioral"
+                }
+            except:
+                # Absolute last resort - but still try to be contextual
+                skill_name = skill_details[0]['name'] if skill_details else 'your experience'
+                return {
+                    "question": f"Can you share an example related to {skill_name}?",
+                    "target_skills": [skill["name"] for skill in skill_details],
+                    "question_type": "behavioral"
+                }
 
 def select_target_skills_contextual(state_manager: StateManager, uncovered_skills: List[Dict], evaluation: Dict) -> List[Dict]:
     """Select target skills based on context and previous response, ensuring no topics are skipped"""

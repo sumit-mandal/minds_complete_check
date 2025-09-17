@@ -10,6 +10,8 @@ A completely automated interview system built with LangGraph that assesses users
 - 📈 **Dynamic Scoring**: Skills can be re-assessed and scores can increase or decrease based on new evidence
 - 🔄 **Adaptive Flow**: The system adapts the interview flow based on user responses
 - 📋 **Comprehensive Reporting**: Detailed summaries with strengths, areas for improvement, and recommendations
+- 👥 **Dual Persona System**: AI interviewer persona (mentor, colleague, etc.) + Candidate persona (student/professional)
+- 🎓 **Context-Aware Questions**: Questions are automatically tailored based on candidate's background (academic vs professional)
 
 ## Architecture
 
@@ -87,7 +89,8 @@ Content-Type: application/json
 
 {
   "session_id": "optional_custom_session_id",
-  "persona": "MENTOR"  // Optional: MENTOR, COLLEAGUE, or FRIEND
+  "persona": "MENTOR",  // Optional: MENTOR, COLLEAGUE, PROFESSOR, etc.
+  "candidate_persona": "PROFESSIONAL"  // Optional: STUDENT or PROFESSIONAL
 }
 ```
 
@@ -404,35 +407,52 @@ The system assesses skills across multiple domains:
 
 ## How It Works
 
-### 1. Topic Selection
+### 1. Dual Persona System
+The system uses two personas to create a more personalized interview experience:
+
+**AI Interviewer Persona**: Controls the communication style and approach
+- `MENTOR`: Wise, encouraging, growth-oriented
+- `COLLEAGUE`: Professional, collaborative, peer-to-peer
+- `PROFESSOR`: Academic, analytical, research-oriented
+- `COACH`: Motivational, energetic, performance-focused
+- And more...
+
+**Candidate Persona**: Determines question context and framing
+- `STUDENT`: Questions focus on academic experiences, group projects, learning situations
+- `PROFESSIONAL`: Questions focus on workplace experiences, career progression, team dynamics
+
+### 2. Topic Selection
 The LLM analyzes uncovered skills and selects the most appropriate topics to assess next, considering:
 - Skills that haven't been assessed
 - Logical grouping of related skills
 - Difficulty levels and flow
 - Efficiency in covering multiple skills per question
+- Candidate's background (student vs professional context)
 
-### 2. Question Generation
+### 3. Question Generation
 For selected skills, the system generates comprehensive questions that:
 - Assess multiple skills simultaneously
 - Are behavioral or situational in nature
 - Request specific examples and experiences
 - Are open-ended for detailed responses
+- Are contextually appropriate for the candidate's background (student vs professional)
 
-### 3. Response Evaluation
+### 4. Response Evaluation
 Each response is evaluated to:
 - Score each target skill (0-10 scale)
 - Provide detailed reasoning
 - Determine if follow-up questions are needed
 - Track which skills were adequately covered
 
-### 4. State Management
+### 5. State Management
 The system maintains detailed state including:
 - Skill coverage status
 - Current scores and assessment history
 - Interview progress
 - User response history
+- Both interviewer and candidate personas
 
-### 5. Dynamic Scoring
+### 6. Dynamic Scoring
 Skills can be re-assessed throughout the interview:
 - Initial assessments set baseline scores
 - Subsequent assessments can increase or decrease scores
@@ -441,6 +461,7 @@ Skills can be re-assessed throughout the interview:
 
 ## Example Interview Flow
 
+### For a Professional Candidate:
 1. **Start**: System selects initial skills to assess
 2. **Question**: "Describe a time when you had to adapt to a major change at work while maintaining your emotional balance."
 3. **Assessment**: Evaluates Adaptive Consistency, Mood Consistency, and Emotional Adaptability
@@ -448,6 +469,17 @@ Skills can be re-assessed throughout the interview:
 5. **Next**: System selects remaining uncovered skills
 6. **Continue**: Process repeats until all skills are assessed
 7. **Summary**: Comprehensive report with scores, strengths, and recommendations
+
+### For a Student Candidate:
+1. **Start**: System selects initial skills to assess
+2. **Question**: "Tell me about a time when you had to adapt to a major change in your academic environment or study routine."
+3. **Assessment**: Evaluates Adaptive Consistency, Mood Consistency, and Emotional Adaptability
+4. **Progress**: Updates scores and marks skills as covered
+5. **Next**: System selects remaining uncovered skills
+6. **Continue**: Process repeats until all skills are assessed
+7. **Summary**: Comprehensive report with scores, strengths, and recommendations
+
+**Note**: The same skills are assessed, but questions are framed differently based on the candidate's background - workplace scenarios for professionals vs academic/learning scenarios for students.
 
 ## API Response Examples
 
