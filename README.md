@@ -12,6 +12,8 @@ A completely automated interview system built with LangGraph that assesses users
 - 📋 **Comprehensive Reporting**: Detailed summaries with strengths, areas for improvement, and recommendations
 - 👥 **Dual Persona System**: AI interviewer persona (mentor, colleague, etc.) + Candidate persona (student/professional)
 - 🎓 **Context-Aware Questions**: Questions are automatically tailored based on candidate's background (academic vs professional)
+- 🔧 **Configurable Domains**: Frontend can pass custom interview domains and skills to assess
+- ⚙️ **Dynamic Configuration**: Maximum questions and assessment criteria can be set per interview
 
 ## Architecture
 
@@ -90,7 +92,28 @@ Content-Type: application/json
 {
   "session_id": "optional_custom_session_id",
   "persona": "MENTOR",  // Optional: MENTOR, COLLEAGUE, PROFESSOR, etc.
-  "candidate_persona": "PROFESSIONAL"  // Optional: STUDENT or PROFESSIONAL
+  "candidate_persona": "PROFESSIONAL",  // Optional: STUDENT or PROFESSIONAL
+  "interview_domains": {  // Required: Interview domains structure
+    "domains": [
+      {
+        "name": "Custom Domain",
+        "subdomains": [
+          {
+            "name": "Custom Subdomain",
+            "core_skills": [
+              {
+                "name": "Custom Skill",
+                "knowledge_areas": ["Area 1", "Area 2"],
+                "practical_applications": ["App 1", "App 2"],
+                "level": "Medium"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "max_questions": 10  // Optional: Maximum number of questions (default: 7)
 }
 ```
 
@@ -524,7 +547,78 @@ Skills can be re-assessed throughout the interview:
 
 ## Customization
 
-### Adding New Domains/Skills
+### Dynamic Interview Configuration
+
+The system now supports dynamic configuration from the frontend:
+
+#### Custom Interview Domains
+You can pass custom interview domains in the API request:
+
+```json
+{
+  "interview_domains": {
+    "domains": [
+      {
+        "name": "Technical Skills",
+        "subdomains": [
+          {
+            "name": "Programming",
+            "core_skills": [
+              {
+                "name": "Problem Solving",
+                "knowledge_areas": ["Algorithm design", "Debugging"],
+                "practical_applications": ["Code optimization", "Bug fixing"],
+                "level": "Hard"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+#### Custom Max Questions
+Set the maximum number of questions per interview:
+
+```json
+{
+  "max_questions": 15
+}
+```
+
+#### Complete Example
+```json
+{
+  "session_id": "custom-interview-001",
+  "persona": "PROFESSOR",
+  "candidate_persona": "STUDENT",
+  "interview_domains": {
+    "domains": [
+      {
+        "name": "Academic Performance",
+        "subdomains": [
+          {
+            "name": "Research Skills",
+            "core_skills": [
+              {
+                "name": "Critical Thinking",
+                "knowledge_areas": ["Analysis", "Synthesis"],
+                "practical_applications": ["Research papers", "Thesis work"],
+                "level": "Hard"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "max_questions": 12
+}
+```
+
+### Adding New Domains/Skills (Legacy Method)
 
 Edit `utils/graph_1_interview_domains.py` to add new domains, subdomains, or skills:
 

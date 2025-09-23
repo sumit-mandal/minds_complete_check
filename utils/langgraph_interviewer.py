@@ -15,7 +15,7 @@ from utils.graph_3_llm_helper import (
     evaluation_llm,
     summarizer_llm
 )
-from utils.graph_1_interview_domains import INTERVIEW_DOMAINS
+# INTERVIEW_DOMAINS is now passed dynamically from the request body
 from utils.database import InterviewDatabase
 from utils.langgraph_flow import build_interview_graph, InterviewState
 
@@ -28,11 +28,15 @@ class LangGraphInterviewer:
         self.graph = build_interview_graph()
         self.session_states = {}  # In-memory session state storage
     
-    def start_interview(self, session_id: str = None, persona: Persona = Persona.MENTOR, candidate_persona: CandidatePersona = CandidatePersona.PROFESSIONAL, target_skills: List[str] = None) -> Dict[str, Any]:
+    def start_interview(self, session_id: str = None, persona: Persona = Persona.MENTOR, candidate_persona: CandidatePersona = CandidatePersona.PROFESSIONAL, interview_domains: Dict[str, Any] = None, max_questions: int = None, target_skills: List[str] = None) -> Dict[str, Any]:
         """Start a new interview session"""
         
         if session_id is None:
             session_id = f"interview_{int(time.time())}"
+        
+        # Use provided max_questions or fall back to instance default
+        if max_questions is None:
+            max_questions = self.max_questions
         
         # Initialize state for LangGraph
         initial_state = InterviewState(
@@ -44,7 +48,7 @@ class LangGraphInterviewer:
             evaluation=None,
             progress={},
             question_count=0,
-            max_questions=self.max_questions,
+            max_questions=max_questions,  # Use dynamic max_questions
             interview_complete=False,
             summary=None,
             final_results=None,
@@ -53,7 +57,8 @@ class LangGraphInterviewer:
             interview_started=False,
             state_manager_data=None,
             persona=persona,
-            candidate_persona=candidate_persona
+            candidate_persona=candidate_persona,
+            interview_domains=interview_domains  # Pass interview domains
         )
         
         # Run the graph
@@ -67,7 +72,8 @@ class LangGraphInterviewer:
             "current_question": result["current_question"],
             "target_skills": result["target_skills"],
             "question_type": result["question_type"],
-            "progress": result["progress"]
+            "progress": result["progress"],
+            "max_questions": result["max_questions"]
         }
     
     def submit_response(self, user_response: str, session_id: str) -> Dict[str, Any]:
@@ -100,7 +106,8 @@ class LangGraphInterviewer:
             interview_started=current_state.get("interview_started", True),
             state_manager_data=current_state.get("state_manager_data"),
             persona=current_state.get("persona", Persona.MENTOR),
-            candidate_persona=current_state.get("candidate_persona", CandidatePersona.PROFESSIONAL)
+            candidate_persona=current_state.get("candidate_persona", CandidatePersona.PROFESSIONAL),
+            interview_domains=current_state.get("interview_domains")  # Include interview domains
         )
         
         # Run the graph

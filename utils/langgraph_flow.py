@@ -19,17 +19,17 @@ from utils.graph_3_llm_helper import (
     evaluation_llm,
     summarizer_llm
 )
-from utils.graph_1_interview_domains import INTERVIEW_DOMAINS
+# INTERVIEW_DOMAINS is now passed dynamically from the request body
 from utils.database import InterviewDatabase
 
-def filter_domains_by_target_skills(target_skills: List[str]) -> Dict[str, Any]:
-    """Filter INTERVIEW_DOMAINS to only include the specified target skills"""
+def filter_domains_by_target_skills(target_skills: List[str], domains: Dict[str, Any]) -> Dict[str, Any]:
+    """Filter domains to only include the specified target skills"""
     if not target_skills:
-        return INTERVIEW_DOMAINS
+        return domains
     
     filtered_domains = []
     
-    for domain in INTERVIEW_DOMAINS["domains"]:
+    for domain in domains["domains"]:
         filtered_subdomains = []
         
         for subdomain in domain["subdomains"]:
@@ -73,6 +73,7 @@ class InterviewState(TypedDict):
     state_manager_data: Optional[Dict[str, Any]]
     persona: Persona
     candidate_persona: CandidatePersona
+    interview_domains: Optional[Dict[str, Any]]
 
 def generate_introduction_question(persona: Persona, candidate_persona: CandidatePersona) -> str:
     """Generate completely dynamic AI-based introduction question with persona and candidate context"""
@@ -136,19 +137,8 @@ Generate a unique, authentic introduction question that naturally flows and feel
     except Exception as e:
         print(f"Error generating introduction question: {e}")
         # Fallback to a simple question
-        # Generate a simple fallback question using AI
-        try:
-            fallback_prompt = ChatPromptTemplate.from_messages([
-                ("system", "Generate a simple, warm introduction question that asks for their name and something personal. Keep it under 100 characters."),
-                ("human", "Create a brief introduction question.")
-            ])
-            fallback_data = question_generator_llm.invoke(fallback_prompt.format_messages())
-            if hasattr(fallback_data, 'content'):
-                return fallback_data.content.strip()
-            else:
-                return str(fallback_data).strip()
-        except:
-            return "Hi! What's your name and what brings you here today?"
+        # If AI generation fails, raise an error - no hardcoded fallbacks
+        raise RuntimeError("Failed to generate introduction question using AI. Check your API key and try again.")
 
 def start_interview(state: InterviewState) -> InterviewState:
     """Start a new interview session or continue existing one"""
@@ -156,13 +146,21 @@ def start_interview(state: InterviewState) -> InterviewState:
     max_questions = state["max_questions"]
     persona = state.get("persona", Persona.MENTOR)
     target_skills = state.get("target_skills", [])
+    interview_domains = state.get("interview_domains")
     
     if state.get("interview_started", False):
         # Interview already started, just pass through to evaluation
         return state
     
+    # Use interview domains from request body - no defaults
+    if not interview_domains:
+        raise ValueError("interview_domains must be provided in the request body")
+    
+    domains_to_use = interview_domains
+    
     # Filter domains based on target skills if provided
-    domains_to_use = filter_domains_by_target_skills(target_skills)
+    if target_skills:
+        domains_to_use = filter_domains_by_target_skills(target_skills, domains_to_use)
     
     # Create new state manager for new interview with persona and filtered domains
     candidate_persona = state.get("candidate_persona", CandidatePersona.PROFESSIONAL)
@@ -202,8 +200,12 @@ def evaluate_response(state: InterviewState) -> InterviewState:
     if not state.get("interview_started", False):
         state["interview_started"] = True
     
-    # Evaluate the response
-    evaluation = evaluate_response_comprehensive(user_response, state_manager)
+    # Evaluate the response - only assess targeted skills
+    target_skills = state.get("target_skills", [])
+    if target_skills:
+        evaluation = evaluate_response_targeted(user_response, state_manager, target_skills)
+    else:
+        evaluation = evaluate_response_comprehensive(user_response, state_manager)
     
     # Update state manager
     update_state_manager(state_manager, user_response, evaluation)
@@ -424,7 +426,15 @@ def deserialize_state_manager(data: Dict[str, Any]) -> StateManager:
     # Create state manager with the reconstructed state
     persona = Persona(data.get("persona", "mentor"))
     candidate_persona = CandidatePersona(data.get("candidate_persona", "professional"))
-    state_manager = StateManager(INTERVIEW_DOMAINS, persona, candidate_persona)
+    # Use domains from serialized data - no defaults
+    domains_data = data.get("domains", [])
+    if not domains_data:
+        raise ValueError("No domain data found in serialized state")
+    
+    # The serialized domains are already in the correct format for StateManager
+    # They were serialized using model_dump() which gives us the raw dict format
+    reconstructed_domains = {"domains": domains_data}
+    state_manager = StateManager(reconstructed_domains, persona, candidate_persona)
     state_manager.state = StateManagerInterviewState(
         domains=domains,
         current_domain=data.get("current_domain"),
@@ -443,6 +453,37 @@ def deserialize_state_manager(data: Dict[str, Any]) -> StateManager:
 
     
     return state_manager
+
+def evaluate_response_targeted(user_response: str, state_manager: StateManager, target_skills: List[str]) -> Dict[str, Any]:
+    """Evaluate a user response for ONLY the targeted skills"""
+    
+    # Get only the targeted skills from the domains
+    targeted_skills = []
+    for domain in state_manager.state.domains:
+        for subdomain in domain.subdomains:
+            for skill in subdomain.core_skills:
+                if skill.name in target_skills:
+                    targeted_skills.append({
+                        "name": skill.name,
+                        "knowledge_areas": skill.knowledge_areas,
+                        "practical_applications": skill.practical_applications,
+                        "level": skill.level
+                    })
+    
+    try:
+        # Use the custom evaluation function
+        from utils.graph_3_llm_helper import evaluate_response_with_llm
+        evaluation = evaluate_response_with_llm(user_response, targeted_skills)
+        return evaluation
+    except Exception as e:
+        # Fallback evaluation if LLM fails
+        print(f"Warning: LLM evaluation failed: {e}")
+        fallback_skills = ["Clarity of Thought", "Problem-Solving Confidence"]
+        return {
+            "skill_scores": {skill: 5.0 for skill in target_skills if skill in fallback_skills},
+            "confidence_level": 0.5,
+            "reasoning": "Fallback evaluation due to LLM failure"
+        }
 
 def evaluate_response_comprehensive(user_response: str, state_manager: StateManager) -> Dict[str, Any]:
     """Evaluate a user response for ALL skills it might cover"""
@@ -504,12 +545,25 @@ def get_next_question_contextual(state_manager: StateManager, user_response: str
     uncovered_skills = state_manager.get_uncovered_skills()
     
     if not uncovered_skills:
-        # All skills covered
-        return {
-            "question": "Interview complete! Thank you for your responses.",
-            "target_skills": [],
-            "question_type": "completion"
-        }
+        # All skills covered - generate AI completion message
+        try:
+            completion_prompt = ChatPromptTemplate.from_messages([
+                ("system", f"Generate a warm, personalized completion message as a {persona.value.replace('_', ' ')}. Thank them for their responses and acknowledge their participation."),
+                ("human", "Generate a completion message.")
+            ])
+            completion_data = question_generator_llm.invoke(completion_prompt.format_messages())
+            if hasattr(completion_data, 'content'):
+                completion_message = completion_data.content.strip()
+            else:
+                completion_message = str(completion_data).strip()
+            
+            return {
+                "question": completion_message,
+                "target_skills": [],
+                "question_type": "completion"
+            }
+        except Exception as e:
+            raise RuntimeError(f"Failed to generate completion message using AI: {e}")
     
     # Select skills to target based on context
     target_skills = select_target_skills_contextual(state_manager, uncovered_skills, evaluation)
@@ -553,63 +607,17 @@ Generate a question that naturally follows from their previous response and asse
         
         # Check if question_data is valid
         if question_data and hasattr(question_data, 'question_text') and question_data.question_text:
-            # Format question with persona-specific language and enforce 150 char limit
-            formatted_question = PersonaHelper.format_question_with_persona(question_data.question_text, persona)
+            # Question is already generated with persona context, just use it directly
             return {
-                "question": formatted_question,
+                "question": question_data.question_text,
                 "target_skills": question_data.target_skills,
                 "question_type": question_data.question_type
             }
         else:
             raise ValueError("Invalid question data returned from LLM")
     except Exception as e:
-        # If AI generation fails, try a simpler approach
-        print(f"Warning: LLM question generation failed: {e}")
-        try:
-            # Try with a simpler prompt
-            simple_prompt = ChatPromptTemplate.from_messages([
-                ("system", f"Generate a brief interview question as a {persona.value.replace('_', ' ')} about {skill_details[0]['name'] if skill_details else 'skills'}. Keep it concise and natural."),
-                ("human", "Generate a question.")
-            ])
-            
-            question_data = question_generator_llm.invoke(simple_prompt.format_messages())
-            
-            if question_data and hasattr(question_data, 'question_text') and question_data.question_text:
-                question = question_data.question_text.strip()
-                return {
-                    "question": question,
-                    "target_skills": [skill["name"] for skill in skill_details],
-                    "question_type": "behavioral"
-                }
-            else:
-                raise ValueError("Simple prompt also failed")
-        except Exception as e2:
-            print(f"Warning: All AI generation failed: {e2}")
-            # Last resort: generate a very basic question using AI
-            try:
-                emergency_prompt = ChatPromptTemplate.from_messages([
-                    ("system", f"Generate a simple interview question as a {persona.value.replace('_', ' ')} about {skill_details[0]['name'] if skill_details else 'their experience'}. Just the question, nothing else."),
-                    ("human", "Generate a simple question.")
-                ])
-                emergency_data = question_generator_llm.invoke(emergency_prompt.format_messages())
-                if hasattr(emergency_data, 'content'):
-                    emergency_question = emergency_data.content.strip()
-                else:
-                    emergency_question = str(emergency_data).strip()
-                
-                return {
-                    "question": emergency_question,
-                    "target_skills": [skill["name"] for skill in skill_details],
-                    "question_type": "behavioral"
-                }
-            except:
-                # Absolute last resort - but still try to be contextual
-                skill_name = skill_details[0]['name'] if skill_details else 'your experience'
-                return {
-                    "question": f"Can you share an example related to {skill_name}?",
-                    "target_skills": [skill["name"] for skill in skill_details],
-                    "question_type": "behavioral"
-                }
+        # If AI generation fails, raise an error - no hardcoded fallbacks
+        raise RuntimeError(f"Failed to generate contextual question using AI: {e}")
 
 def select_target_skills_contextual(state_manager: StateManager, uncovered_skills: List[Dict], evaluation: Dict) -> List[Dict]:
     """Select target skills based on context and previous response, ensuring no topics are skipped"""

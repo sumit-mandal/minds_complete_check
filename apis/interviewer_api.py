@@ -11,7 +11,7 @@ from utils.state_manager import Persona, CandidatePersona
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
 
 # Global instances
-interviewer = LangGraphInterviewer(max_questions=7)  # Set max questions to 7
+interviewer = LangGraphInterviewer()  # Will use default from constructor
 database = InterviewDatabase()  # Database instance
 
 # Request/Response models
@@ -19,6 +19,8 @@ class StartInterviewRequest(BaseModel):
     session_id: Optional[str] = None
     persona: Optional[Persona] = Persona.MENTOR
     candidate_persona: Optional[CandidatePersona] = CandidatePersona.PROFESSIONAL
+    interview_domains: Dict[str, Any]
+    max_questions: int = 7
 
 class StartInterviewResponse(BaseModel):
     session_id: str
@@ -26,6 +28,7 @@ class StartInterviewResponse(BaseModel):
     target_skills: list
     question_type: str
     progress: Dict[str, Any]
+    max_questions: int
 
 class SubmitResponseRequest(BaseModel):
     user_response: str
@@ -69,14 +72,17 @@ async def start_interview(request: StartInterviewRequest):
         session_id = request.session_id or f"session_{uuid.uuid4().hex[:8]}"
         persona = request.persona or Persona.MENTOR
         candidate_persona = request.candidate_persona or CandidatePersona.PROFESSIONAL
-        result = interviewer.start_interview(session_id, persona, candidate_persona)
+        interview_domains = request.interview_domains
+        max_questions = request.max_questions
+        result = interviewer.start_interview(session_id, persona, candidate_persona, interview_domains, max_questions)
         
         return StartInterviewResponse(
             session_id=result["session_id"],
             current_question=result["current_question"],
             target_skills=result["target_skills"],
             question_type=result["question_type"],
-            progress=result["progress"]
+            progress=result["progress"],
+            max_questions=result["max_questions"]
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start interview: {str(e)}")
