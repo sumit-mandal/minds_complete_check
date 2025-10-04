@@ -9,7 +9,7 @@ api_key = os.getenv("API_KEY")
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash",
+    model="gemini-2.0-flash",
     temperature=0.7,  # Slightly higher for more creative question generation
     max_tokens=None,
     timeout=None,
@@ -23,7 +23,7 @@ summarizer_llm = llm.with_structured_output(InterviewSummary)
 
 # LLM with lower temperature for evaluation tasks
 evaluation_llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash",
+    model="gemini-2.0-flash",
     temperature=0.1,  # Lower temperature for more consistent evaluations
     max_tokens=None,
     timeout=None,

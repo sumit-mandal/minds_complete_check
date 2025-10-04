@@ -97,7 +97,7 @@ class LangGraphInterviewer:
             evaluation=current_state.get("evaluation"),
             progress=current_state.get("progress", {}),
             question_count=current_state.get("question_count", 0),
-            max_questions=self.max_questions,
+            max_questions=current_state.get("max_questions", self.max_questions),  # Use state max_questions, fallback to instance default
             interview_complete=current_state.get("interview_complete", False),
             summary=current_state.get("summary"),
             final_results=current_state.get("final_results"),
