@@ -193,6 +193,7 @@ def evaluate_response(state: InterviewState) -> InterviewState:
     session_id = state["session_id"]
     question_count = state["question_count"]
     
+    print("curent_question number is ", question_count)
     # Reconstruct state manager
     state_manager = deserialize_state_manager(state["state_manager_data"])
     

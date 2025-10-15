@@ -11,7 +11,7 @@ from utils.state_manager import Persona, CandidatePersona
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
 
 # Global instances
-interviewer = LangGraphInterviewer()  # Will use default from constructor
+interviewer = LangGraphInterviewer()  # max_questions will come from request body
 database = InterviewDatabase()  # Database instance
 
 # Request/Response models
@@ -20,7 +20,7 @@ class StartInterviewRequest(BaseModel):
     persona: Optional[Persona] = Persona.MENTOR
     candidate_persona: Optional[CandidatePersona] = CandidatePersona.PROFESSIONAL
     interview_domains: Dict[str, Any]
-    max_questions: int = 7
+    max_questions: int
 
 class StartInterviewResponse(BaseModel):
     session_id: str

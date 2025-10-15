@@ -22,7 +22,7 @@ from utils.langgraph_flow import build_interview_graph, InterviewState
 class LangGraphInterviewer:
     """LangGraph-based automated interviewer"""
     
-    def __init__(self, max_questions: int = 7):
+    def __init__(self, max_questions: int = None):
         self.max_questions = max_questions
         self.database = InterviewDatabase()
         self.graph = build_interview_graph()
@@ -34,9 +34,9 @@ class LangGraphInterviewer:
         if session_id is None:
             session_id = f"interview_{int(time.time())}"
         
-        # Use provided max_questions or fall back to instance default
+        # max_questions must be provided from request body
         if max_questions is None:
-            max_questions = self.max_questions
+            raise ValueError("max_questions must be provided in the request body")
         
         # Initialize state for LangGraph
         initial_state = InterviewState(
@@ -97,7 +97,7 @@ class LangGraphInterviewer:
             evaluation=current_state.get("evaluation"),
             progress=current_state.get("progress", {}),
             question_count=current_state.get("question_count", 0),
-            max_questions=current_state.get("max_questions", self.max_questions),  # Use state max_questions, fallback to instance default
+            max_questions=current_state.get("max_questions"),  # Use state max_questions from request
             interview_complete=current_state.get("interview_complete", False),
             summary=current_state.get("summary"),
             final_results=current_state.get("final_results"),
