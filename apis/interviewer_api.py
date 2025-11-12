@@ -7,6 +7,7 @@ from datetime import datetime
 from utils.langgraph_interviewer import LangGraphInterviewer
 from utils.database import InterviewDatabase
 from utils.state_manager import Persona, CandidatePersona
+from utils.trait_analyzer import generate_persona_report
 
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
 
@@ -187,3 +188,23 @@ async def get_statistics():
         return StatisticsResponse(statistics=statistics)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")
+
+@router.get("/persona-trait/{session_id}")
+async def get_persona_trait_report(session_id: str):
+    """Get persona trait report for a specific session"""
+    session_data = database.get_session_data(session_id) 
+    if not session_data:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    final_results = session_data.get("final_results", {})
+    hierarchical_results_raw = final_results.get("hierarchical_results")
+    if not hierarchical_results_raw:
+        raise HTTPException(status_code=404, detail="No hierarchical results found")
+
+
+    conversation_summary_data = database.get_conversation_summary(session_id) 
+    conversation_summary = conversation_summary_data.get("conversation_summary") if conversation_summary_data else None
+    
+    report = generate_persona_report(hierarchical_results_raw,conversation_summary)
+    print("Persona Trait Report:",report)
+    return report
