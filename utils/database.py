@@ -1,258 +1,465 @@
-#!/usr/bin/env python3
-"""
-Database module for storing interview responses and results
-"""
-
-import sqlite3
-import json
+import os
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Dict, List, Any, Optional
-from pathlib import Path
+from typing import Dict, List, Any, Optional, Union
+
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql as pg
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
+from dotenv import load_dotenv
+import uuid
+
+load_dotenv()
+
+DATABASE_URL = (
+    "postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}".format(
+        user=os.environ["DB_USER"],
+        password=os.environ["DB_PASSWORD"],
+        host=os.environ["DB_HOST"],
+        port=os.environ.get("DB_PORT", 5432),
+        db=os.environ["DB_NAME"],
+    )
+)
+
+engine = sa.create_engine(DATABASE_URL,pool_pre_ping=True, echo=False)
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+Base = declarative_base()
+
+
+class InterviewSession(Base):
+    __tablename__ = "interview_sessions"
+
+    session_id = sa.Column(
+        pg.UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+
+    user_id = sa.Column(
+        pg.UUID(as_uuid=True),
+        sa.ForeignKey("users.id", ondelete="CASCADE", use_alter=True, name="fk_interview_sessions_user_id"),
+        nullable=False,
+        index=True,
+    )
+
+    start_time = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+    end_time = sa.Column(sa.TIMESTAMP(timezone=True))
+    max_questions = sa.Column(sa.Integer)
+    total_questions = sa.Column(sa.Integer)
+    progress_percentage = sa.Column(sa.Float)
+    covered_skills = sa.Column(sa.Integer)
+    total_skills = sa.Column(sa.Integer)
+    completion_reason = sa.Column(sa.String(255))
+    overall_score = sa.Column(sa.Float)
+    status = sa.Column(sa.String(50), nullable=False, server_default="in_progress")
+
+    responses = relationship(
+        "InterviewResponse", back_populates="session", cascade="all, delete-orphan"
+    )
+    final_result = relationship(
+        "FinalResult",
+        back_populates="session",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class InterviewResponse(Base):
+    __tablename__ = "interview_responses"
+
+    id = sa.Column(sa.Integer, primary_key=True, autoincrement=True)
+    session_id = sa.Column(
+        pg.UUID(as_uuid=True),
+        sa.ForeignKey("interview_sessions.session_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    question_number = sa.Column(sa.Integer, nullable=False)
+    question_text = sa.Column(sa.Text, nullable=False)
+    user_response = sa.Column(sa.Text, nullable=False)
+    question_type = sa.Column(sa.String(100))
+    target_skills = sa.Column(pg.ARRAY(sa.String))
+    timestamp = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+
+    session = relationship("InterviewSession", back_populates="responses")
+    evaluations = relationship(
+        "SkillEvaluation", back_populates="response", cascade="all, delete-orphan"
+    )
+
+class SkillEvaluation(Base):
+    __tablename__ = "skill_evaluations"
+
+    id = sa.Column(sa.Integer, primary_key=True, autoincrement=True)
+    session_id = sa.Column(
+        pg.UUID(as_uuid=True),
+        sa.ForeignKey("interview_sessions.session_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    response_id = sa.Column(
+        sa.Integer,
+        sa.ForeignKey("interview_responses.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    skill_name = sa.Column(sa.String(255), nullable=False)
+    score = sa.Column(sa.Float)
+    confidence_level = sa.Column(sa.Float)
+    reasoning = sa.Column(sa.Text)
+    timestamp = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+
+    response = relationship("InterviewResponse", back_populates="evaluations")
+
+
+class FinalResult(Base):
+    __tablename__ = "final_results"
+
+    session_id = sa.Column(
+        pg.UUID(as_uuid=True),
+        sa.ForeignKey("interview_sessions.session_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    overall_score = sa.Column(sa.Float)
+    domain_scores = sa.Column(pg.JSONB, default=dict)
+    skill_scores = sa.Column(pg.JSONB, default=dict)
+    hierarchical_results = sa.Column(pg.JSONB, default=dict)
+    summary = sa.Column(pg.JSONB, default=dict)
+    created_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+
+    session = relationship("InterviewSession", back_populates="final_result")
+
+
+@contextmanager
+def get_db_session() -> Session:
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
 
 class InterviewDatabase:
-    """SQLite database for storing interview data"""
+    """ PostgreSQL-backed storage for interview data """
     
-    def __init__(self, db_path: str = "interview_data.db"):
-        self.db_path = db_path
-        self.init_database()
+    def _to_uuid(self, session_id: Union[str, uuid.UUID]) -> uuid.UUID:
+        """Convert session_id to UUID if it's a string"""
+        if isinstance(session_id, str):
+            # Try to parse as UUID first
+            try:
+                return uuid.UUID(session_id)
+            except ValueError:
+                # If it's not a valid UUID string, generate a deterministic UUID from the string
+                # This ensures the same string always maps to the same UUID
+                return uuid.uuid5(uuid.NAMESPACE_DNS, session_id)
+        return session_id
     
-    def init_database(self):
-        """Initialize the database with required tables"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Create sessions table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS interview_sessions (
-                    session_id TEXT PRIMARY KEY,
-                    start_time TIMESTAMP,
-                    end_time TIMESTAMP,
-                    max_questions INTEGER,
-                    total_questions INTEGER,
-                    progress_percentage REAL,
-                    covered_skills INTEGER,
-                    total_skills INTEGER,
-                    completion_reason TEXT,
-                    overall_score REAL,
-                    status TEXT
-                )
-            """)
-            
-            # Create responses table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS interview_responses (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT,
-                    question_number INTEGER,
-                    question_text TEXT,
-                    user_response TEXT,
-                    question_type TEXT,
-                    target_skills TEXT,
-                    timestamp TIMESTAMP,
-                    FOREIGN KEY (session_id) REFERENCES interview_sessions (session_id)
-                )
-            """)
-            
-            # Create evaluations table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS skill_evaluations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT,
-                    response_id INTEGER,
-                    skill_name TEXT,
-                    score REAL,
-                    confidence_level REAL,
-                    reasoning TEXT,
-                    timestamp TIMESTAMP,
-                    FOREIGN KEY (session_id) REFERENCES interview_sessions (session_id),
-                    FOREIGN KEY (response_id) REFERENCES interview_responses (id)
-                )
-            """)
-            
-            # Create final results table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS final_results (
-                    session_id TEXT PRIMARY KEY,
-                    overall_score REAL,
-                    domain_scores TEXT,
-                    skill_scores TEXT,
-                    hierarchical_results TEXT,
-                    summary TEXT,
-                    created_at TIMESTAMP,
-                    FOREIGN KEY (session_id) REFERENCES interview_sessions (session_id)
-                )
-            """)
-            
-            conn.commit()
-    
-    def save_session_start(self, session_id: str, max_questions: int):
-        """Save session start information"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO interview_sessions 
-                (session_id, start_time, max_questions, status)
-                VALUES (?, ?, ?, ?)
-            """, (session_id, datetime.now(), max_questions, "in_progress"))
-            conn.commit()
-    
-    def save_response(self, session_id: str, question_number: int, question_text: str, 
-                     user_response: str, question_type: str, target_skills: List[str]):
-        """Save a user response"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO interview_responses 
-                (session_id, question_number, question_text, user_response, question_type, target_skills, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                session_id, 
-                question_number, 
-                question_text, 
-                user_response, 
-                question_type, 
-                json.dumps(target_skills),
-                datetime.now()
-            ))
-            response_id = cursor.lastrowid
-            
-            # Update session progress
-            cursor.execute("""
-                UPDATE interview_sessions 
-                SET total_questions = ?
-                WHERE session_id = ?
-            """, (question_number, session_id))
-            
-            conn.commit()
-            return response_id
-    
-    def save_evaluation(self, session_id: str, response_id: int, evaluation: Dict[str, Any]):
-        """Save skill evaluation results"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            skill_scores = evaluation.get("skill_scores", {})
-            confidence_level = evaluation.get("confidence_level", 0.0)
-            reasoning = evaluation.get("reasoning", "")
-            
-            for skill_name, score in skill_scores.items():
-                cursor.execute("""
-                    INSERT INTO skill_evaluations 
-                    (session_id, response_id, skill_name, score, confidence_level, reasoning, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    session_id, 
-                    response_id, 
-                    skill_name, 
-                    score, 
-                    confidence_level, 
-                    reasoning,
-                    datetime.now()
-                ))
-            
-            conn.commit()
-    
-    def save_session_completion(self, session_id: str, final_results: Dict[str, Any], 
-                              completion_reason: str):
-        """Save session completion information"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Update session table
-            cursor.execute("""
-                UPDATE interview_sessions 
-                SET end_time = ?, 
-                    progress_percentage = ?, 
-                    covered_skills = ?, 
-                    total_skills = ?, 
-                    completion_reason = ?, 
-                    overall_score = ?, 
-                    status = ?
-                WHERE session_id = ?
-            """, (
-                datetime.now(),
-                final_results.get("interview_progress", 0.0),
-                final_results.get("covered_skills", 0),
-                final_results.get("total_skills", 0),
-                completion_reason,
-                final_results.get("overall_score", 0.0),
-                "completed",
-                session_id
-            ))
-            
-            # Save final results
-            cursor.execute("""
-                INSERT OR REPLACE INTO final_results 
-                (session_id, overall_score, domain_scores, skill_scores, hierarchical_results, summary, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                session_id,
-                final_results.get("overall_score", 0.0),
-                json.dumps(final_results.get("domain_scores", {})),
-                json.dumps(final_results.get("skill_scores", {})),
-                json.dumps(final_results.get("hierarchical_results", {})),
-                json.dumps(final_results.get("summary", {})),
-                datetime.now()
-            ))
-            
-            conn.commit()
-    
-    def get_session_data(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Get complete session data"""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            # Get session info
-            cursor.execute("SELECT * FROM interview_sessions WHERE session_id = ?", (session_id,))
-            session_row = cursor.fetchone()
-            
-            if not session_row:
-                return None
-            
-            session_data = dict(session_row)
-            
-            # Get responses
-            cursor.execute("""
-                SELECT * FROM interview_responses 
-                WHERE session_id = ? 
-                ORDER BY question_number
-            """, (session_id,))
-            responses = [dict(row) for row in cursor.fetchall()]
-            
-            # Get evaluations for each response
-            for response in responses:
-                cursor.execute("""
-                    SELECT * FROM skill_evaluations 
-                    WHERE response_id = ? 
-                    ORDER BY skill_name
-                """, (response['id'],))
-                evaluations = [dict(row) for row in cursor.fetchall()]
-                response['evaluations'] = evaluations
-            
-            # Get final results
-            cursor.execute("SELECT * FROM final_results WHERE session_id = ?", (session_id,))
-            final_results_row = cursor.fetchone()
-            final_results = dict(final_results_row) if final_results_row else {}
-            
-            return {
-                "session": session_data,
-                "responses": responses,
-                "final_results": final_results
-            }
-    
-    def get_conversation_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Get LLM-generated conversation summary for a session"""
-        from utils.graph_3_llm_helper import summarizer_llm
-        from langchain_core.prompts import ChatPromptTemplate
-        import json
+    def save_session_start(self, session_id: str, user_id: str, max_questions: int):
+        if not user_id:
+            raise ValueError("user_id cannot be None or empty")
         
-        # Get session data
+        with get_db_session() as db:
+            db.merge(
+                InterviewSession(
+                    session_id=self._to_uuid(session_id) if hasattr(self, '_to_uuid') else session_id,
+                    user_id=uuid.UUID(user_id) if isinstance(user_id, str) else user_id,
+                    max_questions=max_questions,
+                )
+            )
+    
+    def save_response(
+        self,
+        session_id:str,
+        question_number: int,
+        question_text: str,
+        user_response: str,
+        question_type: str,
+        target_skills: List[str],) -> int:
+        with get_db_session() as db:
+                session_obj = (
+                    db.query(InterviewSession).filter_by(session_id=self._to_uuid(session_id)).one()
+                )
+                response = InterviewResponse(
+                    session=session_obj,
+                    question_number=question_number,
+                    question_text=question_text,
+                    user_response=user_response,
+                    question_type=question_type,
+                    target_skills=target_skills,
+                )
+                db.add(response)
+                session_obj.total_questions = question_number
+                db.flush()
+                return response.id
+    def save_evaluation(
+        self, session_id: str, response_id: int, evaluation: Dict[str, Any]
+    ):
+        with get_db_session() as db:
+            entries = [
+                SkillEvaluation(
+                    session_id=self._to_uuid(session_id),
+                    response_id=response_id,
+                    skill_name=skill,
+                    score=score,
+                    confidence_level=evaluation.get("confidence_level", 0.0),
+                    reasoning=evaluation.get("reasoning", ""),
+                )
+                for skill, score in evaluation.get("skill_scores", {}).items()
+            ]
+            db.add_all(entries)
+
+    def save_session_completion(
+        self, session_id: str, final_results: Dict[str, Any], completion_reason: str
+    ):
+        with get_db_session() as db:
+            session_obj = (
+                db.query(InterviewSession).filter_by(session_id=self._to_uuid(session_id)).one()
+            )
+            session_obj.end_time = datetime.utcnow()
+            session_obj.progress_percentage = final_results.get("interview_progress")
+            session_obj.covered_skills = final_results.get("covered_skills")
+            session_obj.total_skills = final_results.get("total_skills")
+            session_obj.completion_reason = completion_reason
+            session_obj.overall_score = final_results.get("overall_score")
+            session_obj.status = "completed"
+
+            db.merge(
+                FinalResult(
+                    session_id=self._to_uuid(session_id),
+                    overall_score=final_results.get("overall_score"),
+                    domain_scores=final_results.get("domain_scores", {}),
+                    skill_scores=final_results.get("skill_scores", {}),
+                    hierarchical_results=final_results.get("hierarchical_results", {}),
+                    summary=final_results.get("summary", {}),
+                )
+            )
+
+    def get_session_data(self, session_id: str) -> Optional[Dict[str, Any]]:
+        with get_db_session() as db:
+            session_obj = (
+                db.query(InterviewSession)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .options(
+                    sa.orm.selectinload(InterviewSession.responses).selectinload(
+                        InterviewResponse.evaluations
+                    ),
+                    sa.orm.selectinload(InterviewSession.final_result),
+                )
+                .first()
+            )
+            if not session_obj:
+                return None
+
+            data = {
+                "session": {
+                    "session_id": session_obj.session_id,
+                    "user_id": str(session_obj.user_id),
+                    "start_time": session_obj.start_time,
+                    "end_time": session_obj.end_time,
+                    "max_questions": session_obj.max_questions,
+                    "total_questions": session_obj.total_questions,
+                    "progress_percentage": session_obj.progress_percentage,
+                    "covered_skills": session_obj.covered_skills,
+                    "total_skills": session_obj.total_skills,
+                    "completion_reason": session_obj.completion_reason,
+                    "overall_score": session_obj.overall_score,
+                    "status": session_obj.status,
+                },
+                "responses": [],
+                "final_results": {},
+            }
+
+            for response in sorted(
+                session_obj.responses, key=lambda r: r.question_number
+            ):
+                data["responses"].append(
+                    {
+                        "id": response.id,
+                        "question_number": response.question_number,
+                        "question_text": response.question_text,
+                        "user_response": response.user_response,
+                        "question_type": response.question_type,
+                        "target_skills": response.target_skills,
+                        "timestamp": response.timestamp,
+                        "evaluations": [
+                            {
+                                "skill_name": ev.skill_name,
+                                "score": ev.score,
+                                "confidence_level": ev.confidence_level,
+                                "reasoning": ev.reasoning,
+                                "timestamp": ev.timestamp,
+                            }
+                            for ev in sorted(
+                                response.evaluations, key=lambda e: e.skill_name
+                            )
+                        ],
+                    }
+                )
+
+            if session_obj.final_result:
+                fr = session_obj.final_result
+                data["final_results"] = {
+                    "session_id": session_id,
+                    "overall_score": fr.overall_score,
+                    "domain_scores": fr.domain_scores,
+                    "skill_scores": fr.skill_scores,
+                    "hierarchical_results": fr.hierarchical_results,
+                    "summary": fr.summary,
+                    "created_at": fr.created_at,
+                }
+
+            return data
+
+    def get_all_sessions(self):
+        with get_db_session() as db:
+            rows = (
+                db.query(InterviewSession)
+                .order_by(InterviewSession.start_time.desc())
+                .all()
+            )
+            return [
+                {
+                    "session_id": row.session_id,
+                    "user_id": str(row.user_id),
+                    "start_time": row.start_time,
+                    "end_time": row.end_time,
+                    "status": row.status,
+                    "overall_score": row.overall_score,
+                }
+                for row in rows
+            ]
+
+    def get_session_statistics(self) -> Dict[str, Any]:
+        with get_db_session() as db:
+            total = db.query(sa.func.count(InterviewSession.session_id)).scalar() or 0
+            completed = (
+                db.query(sa.func.count(InterviewSession.session_id))
+                .filter(InterviewSession.status == "completed")
+                .scalar()
+                or 0
+            )
+            avg_score = (
+                db.query(sa.func.avg(FinalResult.overall_score))
+                .filter(FinalResult.overall_score.isnot(None))
+                .scalar()
+                or 0.0
+            )
+            avg_questions = (
+                db.query(sa.func.avg(InterviewSession.total_questions))
+                .filter(InterviewSession.status == "completed")
+                .scalar()
+                or 0.0
+            )
+
+            return {
+                "total_sessions": total,
+                "completed_sessions": completed,
+                "average_score": round(avg_score, 2),
+                "average_questions": round(avg_questions, 1),
+                "completion_rate": round((completed / total * 100) if total else 0, 1),
+            }
+
+    def get_all_interviews_by_user_id(self,user_id:str) -> List[Dict[str, Any]]:
+        with get_db_session() as db:
+            sessions = (
+            db.query(InterviewSession)
+            .filter(InterviewSession.user_id == user_id)
+            .options(
+                sa.orm.selectinload(InterviewSession.responses).selectinload(
+                    InterviewResponse.evaluations
+                ),
+                sa.orm.selectinload(InterviewSession.final_result),
+            )
+            .order_by(InterviewSession.start_time.desc())
+            .all()
+        ) 
+
+        if not sessions: 
+            return "No Sessions Found for User"
+
+        all_interviews = [] 
+        for session_obj in sessions: 
+            session_data = {
+                "session": {
+                    "session_id": str(session_obj.session_id),
+                    "user_id": str(session_obj.user_id),
+                    "start_time": session_obj.start_time.isoformat() if session_obj.start_time else None,
+                    "end_time": session_obj.end_time.isoformat() if session_obj.end_time else None,
+                    "max_questions": session_obj.max_questions,
+                    "total_questions": session_obj.total_questions,
+                    "progress_percentage": session_obj.progress_percentage,
+                    "covered_skills": session_obj.covered_skills,
+                    "total_skills": session_obj.total_skills,
+                    "completion_reason": session_obj.completion_reason,
+                    "overall_score": session_obj.overall_score,
+                    "status": session_obj.status,
+                },
+                "responses": [],
+                "final_results": {},
+            }
+
+            # Get all responses for the session
+            for response in sorted(
+                    session_obj.responses, key=lambda r: r.question_number
+                ):
+                    session_data["responses"].append({
+                        "id": response.id,
+                        "question_number": response.question_number,
+                        "question_text": response.question_text,
+                        "user_response": response.user_response,
+                        "question_type": response.question_type,
+                        "target_skills": response.target_skills,
+                        "timestamp": response.timestamp.isoformat() if response.timestamp else None,
+                        "evaluations": [
+                            {
+                                "id": ev.id,
+                                "skill_name": ev.skill_name,
+                                "score": ev.score,
+                                "confidence_level": ev.confidence_level,
+                                "reasoning": ev.reasoning,
+                                "timestamp": ev.timestamp.isoformat() if ev.timestamp else None,
+                            }
+                            for ev in sorted(
+                                response.evaluations, key=lambda e: e.skill_name
+                            )
+                        ],
+                    })
+
+
+            # Get final results if available
+            if session_obj.final_result:
+                fr = session_obj.final_result
+                session_data["final_results"] = {
+                    "session_id": str(fr.session_id),
+                    "overall_score": fr.overall_score,
+                    "domain_scores": fr.domain_scores if fr.domain_scores else {},
+                    "skill_scores": fr.skill_scores if fr.skill_scores else {},
+                    "hierarchical_results": fr.hierarchical_results if fr.hierarchical_results else {},
+                    "summary": fr.summary if fr.summary else {},
+                    "created_at": fr.created_at.isoformat() if fr.created_at else None,
+                }
+            
+            all_interviews.append(session_data)
+        
+        return all_interviews
+
+    def get_conversation_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Generate or retrieve an LLM-based summary for a session"""
+        from utils.graph_3_llm_helper import summarizer_llm, evaluation_llm
+        import json
+        def _json_default(obj):
+            if isinstance(obj, uuid.UUID):
+                return str(obj)
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            raise TypeError(f"{obj} is not JSON serializable")
+        
+        
         session_data = self.get_session_data(session_id)
         if not session_data:
             return None
         
-        # Prepare conversation data for LLM
         conversation_data = {
             "session_info": session_data["session"],
             "responses": []
@@ -266,7 +473,6 @@ class InterviewDatabase:
                 "evaluations": {}
             }
             
-            # Group evaluations by skill
             for eval_data in response["evaluations"]:
                 skill_name = eval_data["skill_name"]
                 response_data["evaluations"][skill_name] = {
@@ -277,52 +483,41 @@ class InterviewDatabase:
             
             conversation_data["responses"].append(response_data)
         
-        # Generate summary using LLM
-        try:
-            from utils.graph_3_llm_helper import evaluation_llm
-            
-            summary_prompt = f"""You are an expert interview analyst. Analyze the complete conversation and provide a comprehensive summary.
+        summary_prompt = f"""You are an expert interview analyst. Analyze the conversation and produce a JSON summary.
 
-Conversation Data: {json.dumps(conversation_data, indent=2)}
+Conversation Data: {json.dumps(conversation_data, indent=2,default=_json_default)}
 
-Please provide a detailed analysis in the following JSON format:
-
+Return JSON like:
 {{
     "overall_score": 7.5,
-    "key_strengths": ["Clear communication", "Problem-solving ability"],
-    "areas_for_improvement": ["Could provide more specific examples"],
+    "key_strengths": ["Clear communication"],
+    "areas_for_improvement": ["Provide more specifics"],
     "communication_style": "Professional and articulate",
     "problem_solving_approach": "Systematic and collaborative",
-    "emotional_intelligence": "Good self-awareness and regulation",
-    "professional_maturity": "Demonstrates leadership qualities",
-    "specific_examples": ["Handled team conflict effectively", "Showed adaptability"],
-    "recommendations": ["Continue developing specific examples", "Practice stress management"],
-    "overall_impression": "Strong candidate with room for growth"
+    "emotional_intelligence": "Good self-awareness",
+    "professional_maturity": "Shows leadership",
+    "specific_examples": ["Handled team conflict well"],
+    "recommendations": ["Give concrete numbers"],
+    "overall_impression": "Strong candidate with room to grow"
 }}
-
-Be thorough, constructive, and professional in your analysis. Return only the JSON object."""
-            
+Return JSON only."""
+        
+        try:
             response = evaluation_llm.invoke(summary_prompt)
             response_text = response.content.strip()
             
-            # Try to extract JSON from the response
-            if response_text.startswith('{') and response_text.endswith('}'):
+            if response_text.startswith("{") and response_text.endswith("}"):
                 summary_data = json.loads(response_text)
             else:
-                # Try to find JSON in the response
                 import re
-                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-                if json_match:
-                    summary_data = json.loads(json_match.group())
-                else:
-                    raise ValueError("No valid JSON found in response")
+                match = re.search(r"\{.*\}", response_text, re.DOTALL)
+                summary_data = json.loads(match.group()) if match else {}
             
             return {
                 "session_id": session_id,
                 "conversation_summary": summary_data,
                 "conversation_data": conversation_data
             }
-            
         except Exception as e:
             print(f"Error generating conversation summary: {e}")
             return {
@@ -336,45 +531,25 @@ Be thorough, constructive, and professional in your analysis. Return only the JS
                 },
                 "conversation_data": conversation_data
             }
-    
-    def get_all_sessions(self) -> List[Dict[str, Any]]:
-        """Get all interview sessions"""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                SELECT * FROM interview_sessions 
-                ORDER BY start_time DESC
-            """)
-            
-            return [dict(row) for row in cursor.fetchall()]
-    
-    def get_session_statistics(self) -> Dict[str, Any]:
-        """Get overall statistics"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Total sessions
-            cursor.execute("SELECT COUNT(*) FROM interview_sessions")
-            total_sessions = cursor.fetchone()[0]
-            
-            # Completed sessions
-            cursor.execute("SELECT COUNT(*) FROM interview_sessions WHERE status = 'completed'")
-            completed_sessions = cursor.fetchone()[0]
-            
-            # Average score
-            cursor.execute("SELECT AVG(overall_score) FROM final_results")
-            avg_score = cursor.fetchone()[0] or 0.0
-            
-            # Average questions per session
-            cursor.execute("SELECT AVG(total_questions) FROM interview_sessions WHERE status = 'completed'")
-            avg_questions = cursor.fetchone()[0] or 0.0
-            
-            return {
-                "total_sessions": total_sessions,
-                "completed_sessions": completed_sessions,
-                "average_score": round(avg_score, 2),
-                "average_questions": round(avg_questions, 1),
-                "completion_rate": round((completed_sessions / total_sessions * 100) if total_sessions > 0 else 0, 1)
-            }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

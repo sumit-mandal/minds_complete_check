@@ -18,6 +18,7 @@ database = InterviewDatabase()  # Database instance
 # Request/Response models
 class StartInterviewRequest(BaseModel):
     session_id: Optional[str] = None
+    user_id: str 
     persona: Optional[Persona] = Persona.MENTOR
     candidate_persona: Optional[CandidatePersona] = CandidatePersona.PROFESSIONAL
     interview_domains: Dict[str, Any]
@@ -75,7 +76,7 @@ async def start_interview(request: StartInterviewRequest):
         candidate_persona = request.candidate_persona or CandidatePersona.PROFESSIONAL
         interview_domains = request.interview_domains
         max_questions = request.max_questions
-        result = interviewer.start_interview(session_id, persona, candidate_persona, interview_domains, max_questions)
+        result = interviewer.start_interview(session_id, request.user_id, persona, candidate_persona, interview_domains, max_questions)
         
         return StartInterviewResponse(
             session_id=result["session_id"],
@@ -208,3 +209,20 @@ async def get_persona_trait_report(session_id: str):
     report = generate_persona_report(hierarchical_results_raw,conversation_summary)
     print("Persona Trait Report:",report)
     return report
+
+
+class UserInterviewsResponse(BaseModel):
+    user_id: str
+    total_sessions: int
+    interviews: List[Dict[str, Any]]
+    
+@router.get("/user/{user_id}/interviews", response_model=UserInterviewsResponse)
+async def get_all_interviews_by_user_id(user_id: str): 
+    interviews = database.get_all_interviews_by_user_id(user_id)
+    
+    if user_id:
+        return UserInterviewsResponse(user_id=user_id,
+                total_sessions=len(interviews),
+                interviews=interviews)
+    else:
+        return "User not found"

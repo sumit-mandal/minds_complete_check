@@ -28,7 +28,7 @@ class LangGraphInterviewer:
         self.graph = build_interview_graph()
         self.session_states = {}  # In-memory session state storage
     
-    def start_interview(self, session_id: str = None, persona: Persona = Persona.MENTOR, candidate_persona: CandidatePersona = CandidatePersona.PROFESSIONAL, interview_domains: Dict[str, Any] = None, max_questions: int = None, target_skills: List[str] = None) -> Dict[str, Any]:
+    def start_interview(self, session_id: str = None, user_id: str = None, persona: Persona = Persona.MENTOR, candidate_persona: CandidatePersona = CandidatePersona.PROFESSIONAL, interview_domains: Dict[str, Any] = None, max_questions: int = None, target_skills: List[str] = None) -> Dict[str, Any]:
         """Start a new interview session"""
         
         if session_id is None:
@@ -41,6 +41,7 @@ class LangGraphInterviewer:
         # Initialize state for LangGraph
         initial_state = InterviewState(
             session_id=session_id,
+            user_id=user_id,
             current_question="",
             target_skills=target_skills or [],  # Use provided target skills or empty list
             question_type="",
@@ -90,6 +91,7 @@ class LangGraphInterviewer:
         # Update state with user response
         state = InterviewState(
             session_id=session_id,
+            user_id=current_state.get("user_id"),  # Preserve user_id
             current_question=current_state["current_question"],
             target_skills=current_state["target_skills"],
             question_type=current_state["question_type"],

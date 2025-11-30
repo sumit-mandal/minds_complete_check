@@ -56,6 +56,7 @@ def filter_domains_by_target_skills(target_skills: List[str], domains: Dict[str,
 class InterviewState(TypedDict):
     """State for the LangGraph interview flow"""
     session_id: str
+    user_id: Optional[str]  # Add this line
     current_question: str
     target_skills: List[str]  # Skills to assess (can be custom or all)
     question_type: str
@@ -144,6 +145,12 @@ def start_interview(state: InterviewState) -> InterviewState:
     """Start a new interview session or continue existing one"""
     session_id = state["session_id"]
     max_questions = state["max_questions"]
+    user_id = state.get("user_id")  # Get user_id from state
+    
+    # Validate user_id is provided
+    if not user_id:
+        raise ValueError("user_id must be provided in the interview state")
+    
     persona = state.get("persona", Persona.MENTOR)
     target_skills = state.get("target_skills", [])
     interview_domains = state.get("interview_domains")
@@ -168,7 +175,7 @@ def start_interview(state: InterviewState) -> InterviewState:
     
     # Save session start to database
     database = InterviewDatabase()
-    database.save_session_start(session_id, max_questions)
+    database.save_session_start(session_id, user_id, max_questions)  # Use validated user_id
     
     # Generate AI-based introduction question with persona and candidate context
     candidate_persona = state.get("candidate_persona", CandidatePersona.PROFESSIONAL)
