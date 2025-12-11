@@ -19,6 +19,7 @@ database = InterviewDatabase()  # Database instance
 class StartInterviewRequest(BaseModel):
     session_id: Optional[str] = None
     user_id: str 
+    name: str 
     persona: Optional[Persona] = Persona.MENTOR
     candidate_persona: Optional[CandidatePersona] = CandidatePersona.PROFESSIONAL
     interview_domains: Dict[str, Any]
@@ -70,54 +71,56 @@ class StatisticsResponse(BaseModel):
 @router.post("/start", response_model=StartInterviewResponse)
 async def start_interview(request: StartInterviewRequest):
     """Start a new interview session"""
-    try:
-        session_id = request.session_id or f"session_{uuid.uuid4().hex[:8]}"
-        persona = request.persona or Persona.MENTOR
-        candidate_persona = request.candidate_persona or CandidatePersona.PROFESSIONAL
-        interview_domains = request.interview_domains
-        max_questions = request.max_questions
-        result = interviewer.start_interview(session_id, request.user_id, persona, candidate_persona, interview_domains, max_questions)
-        
-        return StartInterviewResponse(
-            session_id=result["session_id"],
-            current_question=result["current_question"],
-            target_skills=result["target_skills"],
-            question_type=result["question_type"],
-            progress=result["progress"],
-            max_questions=result["max_questions"]
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start interview: {str(e)}")
+    if request.session_id:
+        session_id = request.session_id
+    else:
+        session_id = database.create_session(request.user_id, request.max_questions)
+    
+    persona = request.persona or Persona.MENTOR
+    candidate_persona = request.candidate_persona or CandidatePersona.PROFESSIONAL
+    interview_domains = request.interview_domains
+    max_questions = request.max_questions
+    
+    
+    result = interviewer.start_interview(session_id, request.user_id, persona, candidate_persona, interview_domains, max_questions,name = request.name)
+    
+    return StartInterviewResponse(
+        session_id=result["session_id"],
+        current_question=result["current_question"],
+        target_skills=result["target_skills"],
+        question_type=result["question_type"],
+        progress=result["progress"],
+        max_questions=result["max_questions"],
+    )
 
 @router.post("/submit", response_model=SubmitResponseResponse)
 async def submit_response(request: SubmitResponseRequest):
     """Submit a user response and get the next question or results"""
-    try:
-        if not request.user_response.strip():
-            raise HTTPException(status_code=400, detail="User response cannot be empty")
-        
-        result = interviewer.submit_response(request.user_response, request.session_id)
-        
-        if result["interview_complete"]:
-            return SubmitResponseResponse(
-                interview_complete=True,
-                summary=result["summary"],
-                final_results=result["final_results"],
-                completion_reason=result.get("completion_reason")
-            )
-        else:
-            return SubmitResponseResponse(
-                interview_complete=False,
-                current_question=result["current_question"],
-                target_skills=result["target_skills"],
-                question_type=result["question_type"],
-                progress=result["progress"],
-                last_evaluation=result["last_evaluation"],
-                question_number=result.get("question_number"),
-                max_questions=result.get("max_questions")
-            )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to process response: {str(e)}")
+    # try:
+    if not request.user_response.strip():
+        raise HTTPException(status_code=400, detail="User response cannot be empty")
+    
+    result = interviewer.submit_response(request.user_response, request.session_id)
+    
+    if result["interview_complete"]:
+        return SubmitResponseResponse(
+            interview_complete=True,
+            summary=result["summary"],
+            final_results=result["final_results"],
+            completion_reason=result.get("completion_reason")
+        )
+    else:
+        return SubmitResponseResponse(
+            interview_complete=False,
+            current_question=result["current_question"],
+            target_skills=result["target_skills"],
+            question_type=result["question_type"],
+            progress=result["progress"],
+            last_evaluation=result["last_evaluation"],
+            question_number=result.get("question_number"),
+            max_questions=result.get("max_questions")
+        )
+
 
 @router.get("/progress/{session_id}", response_model=ProgressResponse)
 async def get_progress(session_id: str):
@@ -199,14 +202,31 @@ async def get_persona_trait_report(session_id: str):
     
     final_results = session_data.get("final_results", {})
     hierarchical_results_raw = final_results.get("hierarchical_results")
-    if not hierarchical_results_raw:
-        raise HTTPException(status_code=404, detail="No hierarchical results found")
+    
+    # Check if hierarchical_results is None, empty dict, or missing
+    if not hierarchical_results_raw or (isinstance(hierarchical_results_raw, dict) and len(hierarchical_results_raw) == 0):
+        # Try to use domain_scores as fallback
+        domain_scores = final_results.get("domain_scores", {})
+        if not domain_scores:
+            raise HTTPException(status_code=404, detail="No hierarchical results or domain scores found")
+        else:
+            print(f"DEBUG API: hierarchical_results is empty, using domain_scores as fallback: {domain_scores}")
+            hierarchical_results_raw = {}  # Set to empty dict, will use fallback
 
+    print(f"DEBUG API: hierarchical_results_raw type: {type(hierarchical_results_raw)}")
+    print(f"DEBUG API: hierarchical_results_raw keys: {list(hierarchical_results_raw.keys()) if isinstance(hierarchical_results_raw, dict) else 'Not a dict'}")
+    if isinstance(hierarchical_results_raw, dict):
+        for key, value in hierarchical_results_raw.items():
+            print(f"DEBUG API: Domain '{key}': type={type(value)}, has average_score={isinstance(value, dict) and 'average_score' in value}")
 
     conversation_summary_data = database.get_conversation_summary(session_id) 
     conversation_summary = conversation_summary_data.get("conversation_summary") if conversation_summary_data else None
     
-    report = generate_persona_report(hierarchical_results_raw,conversation_summary)
+    # Get fallback domain_scores in case hierarchical_results is empty or malformed
+    fallback_domain_scores = final_results.get("domain_scores", {})
+    print(f"DEBUG API: fallback_domain_scores: {fallback_domain_scores}")
+    
+    report = generate_persona_report(hierarchical_results_raw, conversation_summary, fallback_domain_scores=fallback_domain_scores)
     print("Persona Trait Report:",report)
     return report
 

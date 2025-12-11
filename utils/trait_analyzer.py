@@ -102,18 +102,72 @@ class PersonaRankingGenerator:
         """
         domain_scores = {}
         
+        print(f"DEBUG: hierarchical_results type: {type(hierarchical_results)}")
+        print(f"DEBUG: hierarchical_results keys: {list(hierarchical_results.keys()) if isinstance(hierarchical_results, dict) else 'Not a dict'}")
+        
         for domain_name, domain_data in hierarchical_results.items():
             if isinstance(domain_data, dict) and "average_score" in domain_data:
                 domain_scores[domain_name] = domain_data["average_score"]
                 print(f"Domain: {domain_name}, Score: {domain_data['average_score']}")
+            else:
+                print(f"DEBUG: Skipping domain '{domain_name}' - not a dict or missing average_score. Type: {type(domain_data)}, Keys: {list(domain_data.keys()) if isinstance(domain_data, dict) else 'N/A'}")
         
+        print(f"DEBUG: Extracted domain_scores: {domain_scores}")
         return domain_scores
 
+    def _find_domain_score(self, trait_name: str, domain_scores: Dict[str, float]) -> Optional[float]:
+        """
+        Find domain score for a trait name, handling various domain name formats.
+        
+        Tries:
+        1. Exact match (case-insensitive)
+        2. Partial match (domain name contains trait name)
+        3. Split combined names (e.g., "Security and Stability" -> check for "Security" or "Stability")
+        
+        Args:
+            trait_name: The trait name to match (e.g., "Security", "Stability")
+            domain_scores: Dictionary of domain names to scores
+            
+        Returns:
+            Score if found, None otherwise
+        """
+        trait_lower = trait_name.lower()
+        
+        # Try exact match (case-insensitive)
+        for domain_name, score in domain_scores.items():
+            if domain_name.lower() == trait_lower:
+                print(f"DEBUG: Exact match found - trait '{trait_name}' -> domain '{domain_name}'")
+                return score
+        
+        # Try partial match (domain name contains trait name)
+        for domain_name, score in domain_scores.items():
+            domain_lower = domain_name.lower()
+            # Check if trait name is in domain name (as whole word)
+            if trait_lower in domain_lower:
+                # Make sure it's a whole word match, not just substring
+                pattern = r'\b' + re.escape(trait_lower) + r'\b'
+                if re.search(pattern, domain_lower):
+                    print(f"DEBUG: Partial match found - trait '{trait_name}' -> domain '{domain_name}'")
+                    return score
+        
+        # Try splitting combined domain names (e.g., "Security and Stability")
+        for domain_name, score in domain_scores.items():
+            domain_lower = domain_name.lower()
+            # Split by common separators: "and", "&", ",", "-"
+            parts = re.split(r'\s+(?:and|&|,|-)\s+', domain_lower)
+            if trait_lower in parts:
+                print(f"DEBUG: Split match found - trait '{trait_name}' -> domain '{domain_name}' (split)")
+                return score
+        
+        print(f"DEBUG: No match found for trait '{trait_name}' in domains: {list(domain_scores.keys())}")
+        return None
+
     def calcuate_persona_scores(self,persona_def: Dict[str,str],domain_scores:Dict[str,float]) -> Optional[Dict[str,Any]]:
-        trait_1_score = domain_scores.get(persona_def["trait_1"]) 
-        trait_2_score = domain_scores.get(persona_def["trait_2"])
+        trait_1_score = self._find_domain_score(persona_def["trait_1"], domain_scores)
+        trait_2_score = self._find_domain_score(persona_def["trait_2"], domain_scores)
 
         if trait_1_score is None or trait_2_score is None: 
+            print(f"DEBUG: Cannot calculate persona score for {persona_def['name']} - trait_1: {persona_def['trait_1']}={trait_1_score}, trait_2: {persona_def['trait_2']}={trait_2_score}")
             return None 
 
         persona_score = (trait_1_score + trait_2_score) / 2  
@@ -183,9 +237,24 @@ class PersonaRankingGenerator:
         response = llm.invoke(prompt) 
         return response.content.strip()
     
-    def generate_report(self,hierarchical_results:Any, conversation_summary:Optional [Dict[str,Any]]=None) :
+    def generate_report(self,hierarchical_results:Any, conversation_summary:Optional [Dict[str,Any]]=None, fallback_domain_scores:Optional[Dict[str, float]]=None) :
         parsed_results = self._parse_hierarchical_results(hierarchical_results) 
-        domain_scores = self._extract_domain_scores(parsed_results) 
+        domain_scores = self._extract_domain_scores(parsed_results)
+        
+        # Fallback: if no domain scores extracted from hierarchical_results, use fallback_domain_scores
+        if not domain_scores and fallback_domain_scores:
+            print("DEBUG: Using fallback domain_scores from flat structure")
+            domain_scores = fallback_domain_scores
+        
+        if not domain_scores:
+            print("WARNING: No domain scores found! Returning empty report.")
+            return {
+                "ranked_personas": [],
+                "primary_trait": None,
+                "secondary_traits": [],
+                "domain_scores": {}
+            }
+        
         persona_rankings = [] 
 
         for persona_def in self.PERSONA_DEFINITIONS: 
@@ -271,9 +340,9 @@ class PersonaRankingGenerator:
 
 
 
-def generate_persona_report(hierarchical_results: Any, conversation_summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def generate_persona_report(hierarchical_results: Any, conversation_summary: Optional[Dict[str, Any]] = None, fallback_domain_scores: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
     generator = PersonaRankingGenerator()
-    return generator.generate_report(hierarchical_results, conversation_summary)
+    return generator.generate_report(hierarchical_results, conversation_summary, fallback_domain_scores=fallback_domain_scores)
 
 
 

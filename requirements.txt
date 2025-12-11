@@ -2,8 +2,11 @@ fastapi==0.104.1
 uvicorn==0.24.0
 pydantic==2.5.0
 langchain==0.1.0
-langchain-google-genai==0.0.6
-langgraph==0.0.20
+google-generativeai==0.7.2
+langchain-google-genai==2.0.0
+langgraph==0.2.40
+langgraph-checkpoint-postgres==1.0.0
+psycopg[binary,pool]
 python-dotenv==1.0.0
 google-generativeai==0.3.2
 typing-extensions==4.8.0

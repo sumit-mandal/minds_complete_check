@@ -10,46 +10,39 @@ from typing import Dict, List, Any, Optional, TypedDict
 from enum import Enum
 
 from utils.state_manager import StateManager, Persona, CandidatePersona
-from utils.graph_3_llm_helper import (
-    question_generator_llm, 
-    evaluation_llm,
-    summarizer_llm
-)
-# INTERVIEW_DOMAINS is now passed dynamically from the request body
+from utils.graph_3_llm_helper import llm, evaluation_llm
 from utils.database import InterviewDatabase
-from utils.langgraph_flow import build_interview_graph, InterviewState
+from utils.langgraph_flow import build_interview_graph, InterviewState, ensure_persona_enum, ensure_candidate_persona_enum
 
 class LangGraphInterviewer:
-    """LangGraph-based automated interviewer"""
+    """LangGraph-based automated interviewer with checkpointing"""
     
     def __init__(self, max_questions: int = None):
         self.max_questions = max_questions
         self.database = InterviewDatabase()
         self.graph = build_interview_graph()
-        self.session_states = {}  # In-memory session state storage
     
-    def start_interview(self, session_id: str = None, user_id: str = None, persona: Persona = Persona.MENTOR, candidate_persona: CandidatePersona = CandidatePersona.PROFESSIONAL, interview_domains: Dict[str, Any] = None, max_questions: int = None, target_skills: List[str] = None) -> Dict[str, Any]:
+    def start_interview(self, session_id: str = None, user_id: str = None, persona: Persona = Persona.MENTOR, candidate_persona: CandidatePersona = CandidatePersona.PROFESSIONAL, interview_domains: Dict[str, Any] = None, max_questions: int = None, target_skills: List[str] = None,name: str = None) -> Dict[str, Any]:
         """Start a new interview session"""
         
         if session_id is None:
-            session_id = f"interview_{int(time.time())}"
+            raise ValueError("session_id must be provided")
         
-        # max_questions must be provided from request body
         if max_questions is None:
             raise ValueError("max_questions must be provided in the request body")
         
-        # Initialize state for LangGraph
         initial_state = InterviewState(
             session_id=session_id,
             user_id=user_id,
+            name=name,
             current_question="",
-            target_skills=target_skills or [],  # Use provided target skills or empty list
+            target_skills=target_skills or [],
             question_type="",
             user_response=None,
             evaluation=None,
             progress={},
             question_count=0,
-            max_questions=max_questions,  # Use dynamic max_questions
+            max_questions=max_questions,
             interview_complete=False,
             summary=None,
             final_results=None,
@@ -59,14 +52,11 @@ class LangGraphInterviewer:
             state_manager_data=None,
             persona=persona,
             candidate_persona=candidate_persona,
-            interview_domains=interview_domains  # Pass interview domains
+            interview_domains=interview_domains
         )
         
-        # Run the graph
-        result = self.graph.invoke(initial_state)
-        
-        # Store the state for this session
-        self.session_states[session_id] = result
+        config = {"configurable": {"thread_id": session_id}}
+        result = self.graph.invoke(initial_state, config)
         
         return {
             "session_id": result["session_id"],
@@ -83,40 +73,37 @@ class LangGraphInterviewer:
         if not user_response.strip():
             raise ValueError("User response cannot be empty")
         
-        # Get current state for this session
-        current_state = self.session_states.get(session_id)
-        if not current_state:
+        config = {"configurable": {"thread_id": session_id}}
+        
+        current_state = self.graph.get_state(config)
+        if not current_state.values:
             raise ValueError(f"No active session found for {session_id}")
         
-        # Update state with user response
         state = InterviewState(
             session_id=session_id,
-            user_id=current_state.get("user_id"),  # Preserve user_id
-            current_question=current_state["current_question"],
-            target_skills=current_state["target_skills"],
-            question_type=current_state["question_type"],
+            user_id=current_state.values.get("user_id"),
+            name=current_state.values.get("name"),
+            current_question=current_state.values["current_question"],
+            target_skills=current_state.values["target_skills"],
+            question_type=current_state.values["question_type"],
             user_response=user_response,
-            evaluation=current_state.get("evaluation"),
-            progress=current_state.get("progress", {}),
-            question_count=current_state.get("question_count", 0),
-            max_questions=current_state.get("max_questions"),  # Use state max_questions from request
-            interview_complete=current_state.get("interview_complete", False),
-            summary=current_state.get("summary"),
-            final_results=current_state.get("final_results"),
-            completion_reason=current_state.get("completion_reason"),
-            last_response=current_state.get("last_response"),
-            interview_started=current_state.get("interview_started", True),
-            state_manager_data=current_state.get("state_manager_data"),
-            persona=current_state.get("persona", Persona.MENTOR),
-            candidate_persona=current_state.get("candidate_persona", CandidatePersona.PROFESSIONAL),
-            interview_domains=current_state.get("interview_domains")  # Include interview domains
+            evaluation=current_state.values.get("evaluation"),
+            progress=current_state.values.get("progress", {}),
+            question_count=current_state.values.get("question_count", 0),
+            max_questions=current_state.values.get("max_questions"),
+            interview_complete=current_state.values.get("interview_complete", False),
+            summary=current_state.values.get("summary"),
+            final_results=current_state.values.get("final_results"),
+            completion_reason=current_state.values.get("completion_reason"),
+            last_response=current_state.values.get("last_response"),
+            interview_started=current_state.values.get("interview_started", True),
+            state_manager_data=current_state.values.get("state_manager_data"),
+            persona=ensure_persona_enum(current_state.values.get("persona", Persona.MENTOR)),
+            candidate_persona=ensure_candidate_persona_enum(current_state.values.get("candidate_persona", CandidatePersona.PROFESSIONAL)),
+            interview_domains=current_state.values.get("interview_domains")
         )
         
-        # Run the graph
-        result = self.graph.invoke(state)
-        
-        # Update session state
-        self.session_states[session_id] = result
+        result = self.graph.invoke(state, config)
         
         if result["interview_complete"]:
             return {
@@ -137,16 +124,26 @@ class LangGraphInterviewer:
                 "max_questions": result["max_questions"]
             }
     
-    def get_progress(self) -> Dict[str, Any]:
+    def get_progress(self, session_id: str) -> Dict[str, Any]:
         """Get current interview progress"""
-        # This would need to be implemented with proper state persistence
-        return {"progress_percentage": 0, "covered_skills": 0, "total_skills": 0}
+        config = {"configurable": {"thread_id": session_id}}
+        state = self.graph.get_state(config)
+        
+        if not state.values:
+            raise ValueError(f"No session found for {session_id}")
+        
+        return state.values.get("progress", {})
     
-    def get_results(self) -> Dict[str, Any]:
+    def get_results(self, session_id: str) -> Dict[str, Any]:
         """Get current interview results"""
-        # This would need to be implemented with proper state persistence
-        return {"overall_score": 0, "skill_scores": {}}
-    
-    def reset_interview(self):
-        """Reset the interview state"""
-        self.session_states.clear()
+        config = {"configurable": {"thread_id": session_id}}
+        state = self.graph.get_state(config)
+        
+        if not state.values:
+            raise ValueError(f"No session found for {session_id}")
+        
+        return {
+            "final_results": state.values.get("final_results"),
+            "summary": state.values.get("summary"),
+            "evaluation": state.values.get("evaluation")
+        }

@@ -11,16 +11,13 @@ from enum import Enum
 
 from langgraph.graph import StateGraph, END
 from langchain_core.prompts import ChatPromptTemplate
+from langgraph.checkpoint.postgres import PostgresSaver
+from psycopg_pool import ConnectionPool
 
 from utils.state_manager import StateManager, Persona, CandidatePersona
 from utils.persona_helper import PersonaHelper
-from utils.graph_3_llm_helper import (
-    question_generator_llm, 
-    evaluation_llm,
-    summarizer_llm
-)
-# INTERVIEW_DOMAINS is now passed dynamically from the request body
-from utils.database import InterviewDatabase
+from utils.graph_3_llm_helper import llm, evaluation_llm
+from utils.database import DATABASE_URL, InterviewDatabase
 
 def filter_domains_by_target_skills(target_skills: List[str], domains: Dict[str, Any]) -> Dict[str, Any]:
     """Filter domains to only include the specified target skills"""
@@ -57,6 +54,7 @@ class InterviewState(TypedDict):
     """State for the LangGraph interview flow"""
     session_id: str
     user_id: Optional[str]  # Add this line
+    name: Optional[str]
     current_question: str
     target_skills: List[str]  # Skills to assess (can be custom or all)
     question_type: str
@@ -76,7 +74,7 @@ class InterviewState(TypedDict):
     candidate_persona: CandidatePersona
     interview_domains: Optional[Dict[str, Any]]
 
-def generate_introduction_question(persona: Persona, candidate_persona: CandidatePersona) -> str:
+def generate_introduction_question(persona: Persona, candidate_persona: CandidatePersona, name: str) -> str:
     """Generate completely dynamic AI-based introduction question with persona and candidate context"""
     
     try:
@@ -96,90 +94,93 @@ Your communication style should be:
 {candidate_context}
 
 Create a warm, engaging introduction question that:
-1. Starts with a natural, friendly greeting
-2. Asks for their name in a comfortable way
-3. Asks about something personal to help them feel at ease
-4. Is contextually appropriate for their background (student vs professional)
-5. Feels authentic and conversational
-6. Is under 300 characters total
-7. Varies every time - be creative and unique
-8. Makes them feel comfortable and excited to share
+1. Starts with a natural, friendly greeting using the person's name: {name}
+2. Uses their name to make them feel comfortable and welcomed
+3. Asks about something personal to help them feel at ease, Boost their confidence and make them feel comfortable to share their thoughts and ideas.
+4. You can Ask about their goals and aspirations, their dreams and ambitions, their hopes and dreams, their fears and doubts, their strengths and weaknesses, their past experiences and future plans, hobbies and interests, favorite books and movies and TV shows and music and anything else that they are passionate about.
+5. Is contextually appropriate for their background (student vs professional)
+6. Feels authentic and conversational
+7. Is under 300 characters total
+8. Varies every time - be creative and unique
+9. Makes them feel comfortable and excited to share
 
-Generate a unique, authentic introduction question that naturally flows and feels personal."""),
+Generate a unique, authentic introduction question that naturally flows and feels personal.
+Return ONLY the question text, nothing else."""),
             ("human", "Please create a warm introduction question for starting our conversation.")
         ])
         
-        # Generate the introduction question
-        question_data = question_generator_llm.invoke(
-            introduction_prompt.format_messages()
-        )
+        # Use regular LLM for introduction (no structured output needed - we only need text)
+        from utils.graph_3_llm_helper import llm
+        question_data = (introduction_prompt | llm).invoke({})
         
         # Extract question text from the response
         if hasattr(question_data, 'content'):
             question_text = question_data.content.strip()
-        elif hasattr(question_data, 'question_text'):
-            question_text = question_data.question_text.strip()
         else:
             question_text = str(question_data).strip()
         
-        # If the response contains structured data, extract just the question
-        if 'question_text=' in question_text:
-            import re
-            match = re.search(r'question_text="([^"]*)"', question_text)
-            if match:
-                question_text = match.group(1)
+        # Clean up any markdown or extra formatting
+        question_text = question_text.strip('"').strip("'").strip()
         
-        # Ensure it's under 300 characters
-        if len(question_text) > 300:
-            question_text = question_text[:297] + "..."
         
         return question_text
         
     except Exception as e:
         print(f"Error generating introduction question: {e}")
-        # Fallback to a simple question
-        # If AI generation fails, raise an error - no hardcoded fallbacks
-        raise RuntimeError("Failed to generate introduction question using AI. Check your API key and try again.")
+        # If AI generation fails, raise an error with details - no hardcoded fallbacks
+        raise RuntimeError(f"Failed to generate introduction question using AI: {str(e)}. Check your API key and LLM configuration.")
+
+def ensure_persona_enum(persona_value):
+    """Convert persona value to Persona enum if it's a string"""
+    if isinstance(persona_value, Persona):
+        return persona_value
+    if isinstance(persona_value, str):
+        return Persona(persona_value)
+    return Persona.MENTOR
+
+def ensure_candidate_persona_enum(candidate_persona_value):
+    """Convert candidate_persona value to CandidatePersona enum if it's a string"""
+    if isinstance(candidate_persona_value, CandidatePersona):
+        return candidate_persona_value
+    if isinstance(candidate_persona_value, str):
+        return CandidatePersona(candidate_persona_value)
+    return CandidatePersona.PROFESSIONAL
 
 def start_interview(state: InterviewState) -> InterviewState:
     """Start a new interview session or continue existing one"""
     session_id = state["session_id"]
     max_questions = state["max_questions"]
-    user_id = state.get("user_id")  # Get user_id from state
+    user_id = state.get("user_id")
+    name = state.get("name")
     
-    # Validate user_id is provided
     if not user_id:
         raise ValueError("user_id must be provided in the interview state")
     
-    persona = state.get("persona", Persona.MENTOR)
+    if not name:
+        raise ValueError("name must be provided in the interview state")
+    
+    persona = ensure_persona_enum(state.get("persona", Persona.MENTOR))
+    candidate_persona = ensure_candidate_persona_enum(state.get("candidate_persona", CandidatePersona.PROFESSIONAL))
     target_skills = state.get("target_skills", [])
     interview_domains = state.get("interview_domains")
     
     if state.get("interview_started", False):
-        # Interview already started, just pass through to evaluation
         return state
     
-    # Use interview domains from request body - no defaults
     if not interview_domains:
         raise ValueError("interview_domains must be provided in the request body")
     
     domains_to_use = interview_domains
     
-    # Filter domains based on target skills if provided
     if target_skills:
         domains_to_use = filter_domains_by_target_skills(target_skills, domains_to_use)
     
-    # Create new state manager for new interview with persona and filtered domains
-    candidate_persona = state.get("candidate_persona", CandidatePersona.PROFESSIONAL)
     state_manager = StateManager(domains_to_use, persona, candidate_persona)
     
-    # Save session start to database
     database = InterviewDatabase()
-    database.save_session_start(session_id, user_id, max_questions)  # Use validated user_id
+    database.save_session_start(session_id, user_id, max_questions)
     
-    # Generate AI-based introduction question with persona and candidate context
-    candidate_persona = state.get("candidate_persona", CandidatePersona.PROFESSIONAL)
-    introduction_question = generate_introduction_question(persona, candidate_persona)
+    introduction_question = generate_introduction_question(persona, candidate_persona,name)
     
     return {
         **state,
@@ -337,9 +338,8 @@ def generate_question(state: InterviewState) -> InterviewState:
             "state_manager_data": serialize_state_manager(state_manager)
         }
     
-    # Get next question
-    persona = state.get("persona", Persona.MENTOR)
-    candidate_persona = state.get("candidate_persona", CandidatePersona.PROFESSIONAL)
+    persona = ensure_persona_enum(state.get("persona", Persona.MENTOR))
+    candidate_persona = ensure_candidate_persona_enum(state.get("candidate_persona", CandidatePersona.PROFESSIONAL))
     next_question_result = get_next_question_contextual(state_manager, state["last_response"], state["evaluation"], persona, candidate_persona)
     
     return {
@@ -553,17 +553,15 @@ def get_next_question_contextual(state_manager: StateManager, user_response: str
     uncovered_skills = state_manager.get_uncovered_skills()
     
     if not uncovered_skills:
-        # All skills covered - generate AI completion message
+        # All skills covered - generate AI completion message using base LLM
         try:
             completion_prompt = ChatPromptTemplate.from_messages([
-                ("system", f"Generate a warm, personalized completion message as a {persona.value.replace('_', ' ')}. Thank them for their responses and acknowledge their participation."),
+                ("system", f"Generate a warm, personalized completion message as a {persona.value.replace('_', ' ')}. Thank them for their responses and acknowledge their participation. Return ONLY the completion message text, no JSON or extra formatting."),
                 ("human", "Generate a completion message.")
             ])
-            completion_data = question_generator_llm.invoke(completion_prompt.format_messages())
-            if hasattr(completion_data, 'content'):
-                completion_message = completion_data.content.strip()
-            else:
-                completion_message = str(completion_data).strip()
+            # Use base LLM for simple text response
+            completion_response = (completion_prompt | llm).invoke({})
+            completion_message = completion_response.content.strip()
             
             return {
                 "question": completion_message,
@@ -571,7 +569,7 @@ def get_next_question_contextual(state_manager: StateManager, user_response: str
                 "question_type": "completion"
             }
         except Exception as e:
-            raise RuntimeError(f"Failed to generate completion message using AI: {e}")
+            raise RuntimeError(f"Failed to generate completion message using AI: {str(e)}. Check your API key and LLM configuration.")
     
     # Select skills to target based on context
     target_skills = select_target_skills_contextual(state_manager, uncovered_skills, evaluation)
@@ -601,31 +599,53 @@ Previous user response: {{previous_response}}
 Skills to assess: {{skill_details}}
 Last evaluation: {{last_evaluation}}
 
-Generate a question that naturally follows from their previous response and assesses the target skills."""),
+Generate a question that naturally follows from their previous response and assesses the target skills.
+
+Return your response in JSON format with these fields:
+- question_text: The interview question to ask
+- target_skills: List of core skills this question assesses
+- question_type: Type of question (behavioral, situational, technical, etc.)
+- difficulty_level: Easy, Medium, or Hard
+- expected_indicators: What to look for in the response
+
+Return ONLY valid JSON, no other text."""),
             ("human", "Please generate a contextual interview question.")
         ])
         
-        question_data = question_generator_llm.invoke(
-            question_prompt.format_messages(
-                previous_response=user_response or "No previous response",
-                skill_details=json.dumps(skill_details, indent=2),
-                last_evaluation=json.dumps(evaluation, indent=2) if evaluation else "No previous evaluation"
-            )
-        )
+        # Use base LLM without structured output to avoid schema issues
+        response = (question_prompt | llm).invoke({
+            "previous_response": user_response or "No previous response",
+            "skill_details": json.dumps(skill_details, indent=2),
+            "last_evaluation": json.dumps(evaluation, indent=2) if evaluation else "No previous evaluation"
+        })
         
-        # Check if question_data is valid
-        if question_data and hasattr(question_data, 'question_text') and question_data.question_text:
-            # Question is already generated with persona context, just use it directly
+        # Parse JSON from response
+        response_text = response.content.strip()
+        
+        # Remove markdown code blocks if present
+        if response_text.startswith('```'):
+            response_text = response_text.split('```')[1]
+            if response_text.startswith('json'):
+                response_text = response_text[4:]
+            response_text = response_text.strip()
+        
+        question_data = json.loads(response_text)
+        
+        question_text = question_data.get('question_text', '')
+        target_skills = question_data.get('target_skills', [])
+        question_type = question_data.get('question_type', '')
+        
+        if question_text:
             return {
-                "question": question_data.question_text,
-                "target_skills": question_data.target_skills,
-                "question_type": question_data.question_type
+                "question": question_text,
+                "target_skills": target_skills,
+                "question_type": question_type
             }
         else:
-            raise ValueError("Invalid question data returned from LLM")
+            raise ValueError("Invalid question data returned from LLM: missing question_text")
     except Exception as e:
-        # If AI generation fails, raise an error - no hardcoded fallbacks
-        raise RuntimeError(f"Failed to generate contextual question using AI: {e}")
+        # If AI generation fails, raise an error with details - no hardcoded fallbacks
+        raise RuntimeError(f"Failed to generate contextual question using AI: {str(e)}. Check your API key and LLM configuration.")
 
 def select_target_skills_contextual(state_manager: StateManager, uncovered_skills: List[Dict], evaluation: Dict) -> List[Dict]:
     """Select target skills based on context and previous response, ensuring no topics are skipped"""
@@ -780,25 +800,21 @@ Return your response as a JSON object with the following structure:
         }
 
 def build_interview_graph():
-    """Build the LangGraph interview flow"""
+    """Build the LangGraph interview flow with checkpointing"""
     
-    # Create the graph
     workflow = StateGraph(InterviewState)
     
-    # Add nodes
     workflow.add_node("start_interview", start_interview)
     workflow.add_node("evaluate_response", evaluate_response)
     workflow.add_node("generate_question", generate_question)
     
-    # Define the flow
     workflow.set_entry_point("start_interview")
     
-    # Add conditional edges
     workflow.add_conditional_edges(
         "start_interview",
         should_start_interview,
         {
-            "start": END,  # Show introduction question and end
+            "start": END,
             "evaluate": "evaluate_response"
         }
     )
@@ -812,7 +828,11 @@ def build_interview_graph():
         }
     )
     
-    # Remove the loop - generate_question should always end
     workflow.add_edge("generate_question", END)
     
-    return workflow.compile()
+    conn_string = DATABASE_URL.replace("+psycopg2", "")
+    pool = ConnectionPool(conninfo=conn_string)
+    checkpoint = PostgresSaver(pool)
+    checkpoint.setup()
+    
+    return workflow.compile(checkpointer=checkpoint)

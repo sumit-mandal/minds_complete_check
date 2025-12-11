@@ -1,5 +1,4 @@
 import os
-from utils.state_manager import Question, InterviewSummary
 from dotenv import load_dotenv
 import json
 
@@ -10,21 +9,17 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
-    temperature=0.7,  # Slightly higher for more creative question generation
+    temperature=0.7,
     max_tokens=None,
     timeout=None,
     max_retries=2,
     google_api_key=api_key
 )
 
-# Specialized LLM instances for different tasks
-question_generator_llm = llm.with_structured_output(Question)
-summarizer_llm = llm.with_structured_output(InterviewSummary)
-
 # LLM with lower temperature for evaluation tasks
 evaluation_llm = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash",
-    temperature=0.1,  # Lower temperature for more consistent evaluations
+    temperature=0.1,
     max_tokens=None,
     timeout=None,
     max_retries=2,

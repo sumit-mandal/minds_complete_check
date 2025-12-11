@@ -155,6 +155,21 @@ class InterviewDatabase:
                 return uuid.uuid5(uuid.NAMESPACE_DNS, session_id)
         return session_id
     
+    def create_session(self, user_id: str, max_questions: int) -> str:
+        """Create a new interview session and return the session_id"""
+        if not user_id:
+            raise ValueError("user_id cannot be None or empty")
+        
+        with get_db_session() as db:
+            session = InterviewSession(
+                user_id=uuid.UUID(user_id) if isinstance(user_id, str) else user_id,
+                max_questions=max_questions,
+            )
+            db.add(session)
+            db.flush()
+            session_id = str(session.session_id)
+            return session_id
+    
     def save_session_start(self, session_id: str, user_id: str, max_questions: int):
         if not user_id:
             raise ValueError("user_id cannot be None or empty")
@@ -446,7 +461,7 @@ class InterviewDatabase:
 
     def get_conversation_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Generate or retrieve an LLM-based summary for a session"""
-        from utils.graph_3_llm_helper import summarizer_llm, evaluation_llm
+        from utils.graph_3_llm_helper import evaluation_llm
         import json
         def _json_default(obj):
             if isinstance(obj, uuid.UUID):
