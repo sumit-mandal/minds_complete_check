@@ -4,7 +4,7 @@ Persona Helper for Interview System
 Provides persona-specific prompts and communication styles
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from utils.state_manager import Persona, CandidatePersona
 
 class PersonaHelper:
@@ -69,10 +69,19 @@ class PersonaHelper:
             return """The candidate is a PROFESSIONAL. Adapt your questions to their workplace background and career experiences. Consider their professional journey, work environment, and career achievements when framing questions."""
     
     @classmethod
-    def get_question_generation_prompt(cls, persona: Persona, candidate_persona: CandidatePersona) -> str:
+    def get_question_generation_prompt(cls, persona: Persona, candidate_persona: CandidatePersona, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None) -> str:
         """Get persona-specific prompt for question generation - completely dynamic"""
         style = cls.get_persona_style(persona)
         candidate_context = cls.get_candidate_persona_context(candidate_persona)
+        
+        # Build customization context from new fields
+        customization_context = ""
+        if pronoun:
+            customization_context += f"\n- Use the pronoun '{pronoun}' when referring to the candidate.\n"
+        if career_level:
+            customization_context += f"\n- The candidate's career level is: {career_level}. Tailor your questions to reflect their experience level and use appropriate terminology.\n"
+        if industry:
+            customization_context += f"\n- The candidate works in the {industry} industry. Consider industry-specific context, challenges, and terminology when framing your questions.\n"
         
         return f"""You are an expert interviewer embodying the role of a {persona.value.replace('_', ' ')}. 
 
@@ -82,6 +91,7 @@ Your communication style should be:
 - Language: {style['language_style']}
 
 {candidate_context}
+{customization_context}
 
 When generating questions:
 1. Be completely original and creative - no fixed patterns or templates
@@ -96,6 +106,8 @@ When generating questions:
 10. IMPORTANT: Ensure the question directly addresses the target skills to avoid topic skipping
 11. CRITICAL: Keep the question concise and under 300 characters limit and natural
 12. Sound like a real person having a conversation, not a scripton
+13. Incorporate their career level and industry context naturally if provided
+14. Try to understand from the context, sometime user might give the answer in a way that is not related to the target skills or is completely different or vague, so you need to first understand the context and then ask follow-up questions to get the answer in the right format, and bring user back to the right track.
 
 Generate a unique, authentic question that naturally follows from their previous response and assesses the target skills, while maintaining the {persona.value.replace('_', ' ')} persona throughout. Make it feel fresh and personal every time."""
     

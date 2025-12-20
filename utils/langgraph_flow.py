@@ -73,14 +73,26 @@ class InterviewState(TypedDict):
     persona: Persona
     candidate_persona: CandidatePersona
     interview_domains: Optional[Dict[str, Any]]
+    pronoun: Optional[str]
+    career_level: Optional[str]
+    industry: Optional[str]
 
-def generate_introduction_question(persona: Persona, candidate_persona: CandidatePersona, name: str) -> str:
+def generate_introduction_question(persona: Persona, candidate_persona: CandidatePersona, name: str, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None) -> str:
     """Generate completely dynamic AI-based introduction question with persona and candidate context"""
     
     try:
         # Get persona-specific communication style
         persona_style = PersonaHelper.get_persona_style(persona)
         candidate_context = PersonaHelper.get_candidate_persona_context(candidate_persona)
+        
+        # Build customization context from new fields
+        customization_context = ""
+        if pronoun:
+            customization_context += f"\n- Use the pronoun '{pronoun}' when referring to the candidate.\n"
+        if career_level:
+            customization_context += f"\n- The candidate's career level is: {career_level}. Tailor your question to reflect their experience level.\n"
+        if industry:
+            customization_context += f"\n- The candidate works in the {industry} industry. Consider industry-specific context when framing your question.\n"
         
         # Create a completely AI-driven introduction prompt
         introduction_prompt = ChatPromptTemplate.from_messages([
@@ -92,6 +104,7 @@ Your communication style should be:
 - Language: {persona_style['language_style']}
 
 {candidate_context}
+{customization_context}
 
 Create a warm, engaging introduction question that:
 1. Starts with a natural, friendly greeting using the person's name: {name}
@@ -103,6 +116,7 @@ Create a warm, engaging introduction question that:
 7. Is under 300 characters total
 8. Varies every time - be creative and unique
 9. Makes them feel comfortable and excited to share
+10. Incorporates their career level and industry context naturally if provided
 
 Generate a unique, authentic introduction question that naturally flows and feels personal.
 Return ONLY the question text, nothing else."""),
@@ -180,7 +194,10 @@ def start_interview(state: InterviewState) -> InterviewState:
     database = InterviewDatabase()
     database.save_session_start(session_id, user_id, max_questions)
     
-    introduction_question = generate_introduction_question(persona, candidate_persona,name)
+    pronoun = state.get("pronoun")
+    career_level = state.get("career_level")
+    industry = state.get("industry")
+    introduction_question = generate_introduction_question(persona, candidate_persona, name, pronoun=pronoun, career_level=career_level, industry=industry)
     
     return {
         **state,
@@ -192,7 +209,10 @@ def start_interview(state: InterviewState) -> InterviewState:
         "interview_started": False,
         "interview_complete": False,
         "persona": persona,
-        "state_manager_data": serialize_state_manager(state_manager)
+        "state_manager_data": serialize_state_manager(state_manager),
+        "pronoun": pronoun,
+        "career_level": career_level,
+        "industry": industry
     }
 
 def evaluate_response(state: InterviewState) -> InterviewState:
@@ -340,7 +360,10 @@ def generate_question(state: InterviewState) -> InterviewState:
     
     persona = ensure_persona_enum(state.get("persona", Persona.MENTOR))
     candidate_persona = ensure_candidate_persona_enum(state.get("candidate_persona", CandidatePersona.PROFESSIONAL))
-    next_question_result = get_next_question_contextual(state_manager, state["last_response"], state["evaluation"], persona, candidate_persona)
+    pronoun = state.get("pronoun")
+    career_level = state.get("career_level")
+    industry = state.get("industry")
+    next_question_result = get_next_question_contextual(state_manager, state["last_response"], state["evaluation"], persona, candidate_persona, pronoun=pronoun, career_level=career_level, industry=industry)
     
     return {
         **state,
@@ -546,7 +569,7 @@ def update_state_manager(state_manager: StateManager, user_response: str, evalua
     if isinstance(skill_scores, dict):
         state_manager.update_skill_scores(skill_scores, response_data)
 
-def get_next_question_contextual(state_manager: StateManager, user_response: str, evaluation: Dict[str, Any], persona: Persona, candidate_persona: CandidatePersona) -> Dict[str, Any]:
+def get_next_question_contextual(state_manager: StateManager, user_response: str, evaluation: Dict[str, Any], persona: Persona, candidate_persona: CandidatePersona, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None) -> Dict[str, Any]:
     """Get the next question based on previous response and remaining skills"""
     
     # Get uncovered skills
@@ -590,7 +613,7 @@ def get_next_question_contextual(state_manager: StateManager, user_response: str
     
     try:
         # Get persona-specific prompt
-        persona_prompt = PersonaHelper.get_question_generation_prompt(persona, candidate_persona)
+        persona_prompt = PersonaHelper.get_question_generation_prompt(persona, candidate_persona, pronoun=pronoun, career_level=career_level, industry=industry)
         
         question_prompt = ChatPromptTemplate.from_messages([
             ("system", f"""{persona_prompt}

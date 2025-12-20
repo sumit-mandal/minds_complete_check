@@ -22,7 +22,7 @@ class LangGraphInterviewer:
         self.database = InterviewDatabase()
         self.graph = build_interview_graph()
     
-    def start_interview(self, session_id: str = None, user_id: str = None, persona: Persona = Persona.MENTOR, candidate_persona: CandidatePersona = CandidatePersona.PROFESSIONAL, interview_domains: Dict[str, Any] = None, max_questions: int = None, target_skills: List[str] = None,name: str = None) -> Dict[str, Any]:
+    def start_interview(self, session_id: str = None, user_id: str = None, persona: Persona = Persona.MENTOR, candidate_persona: CandidatePersona = CandidatePersona.PROFESSIONAL, interview_domains: Dict[str, Any] = None, max_questions: int = None, target_skills: List[str] = None, name: str = None, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None) -> Dict[str, Any]:
         """Start a new interview session"""
         
         if session_id is None:
@@ -52,7 +52,10 @@ class LangGraphInterviewer:
             state_manager_data=None,
             persona=persona,
             candidate_persona=candidate_persona,
-            interview_domains=interview_domains
+            interview_domains=interview_domains,
+            pronoun=pronoun,
+            career_level=career_level,
+            industry=industry
         )
         
         config = {"configurable": {"thread_id": session_id}}
@@ -100,7 +103,10 @@ class LangGraphInterviewer:
             state_manager_data=current_state.values.get("state_manager_data"),
             persona=ensure_persona_enum(current_state.values.get("persona", Persona.MENTOR)),
             candidate_persona=ensure_candidate_persona_enum(current_state.values.get("candidate_persona", CandidatePersona.PROFESSIONAL)),
-            interview_domains=current_state.values.get("interview_domains")
+            interview_domains=current_state.values.get("interview_domains"),
+            pronoun=current_state.values.get("pronoun"),
+            career_level=current_state.values.get("career_level"),
+            industry=current_state.values.get("industry")
         )
         
         result = self.graph.invoke(state, config)

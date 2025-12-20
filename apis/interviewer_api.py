@@ -24,6 +24,9 @@ class StartInterviewRequest(BaseModel):
     candidate_persona: Optional[CandidatePersona] = CandidatePersona.PROFESSIONAL
     interview_domains: Dict[str, Any]
     max_questions: int
+    pronoun: Optional[str] = None
+    career_level: Optional[str] = None
+    industry: Optional[str] = None
 
 class StartInterviewResponse(BaseModel):
     session_id: str
@@ -82,7 +85,7 @@ async def start_interview(request: StartInterviewRequest):
     max_questions = request.max_questions
     
     
-    result = interviewer.start_interview(session_id, request.user_id, persona, candidate_persona, interview_domains, max_questions,name = request.name)
+    result = interviewer.start_interview(session_id, request.user_id, persona, candidate_persona, interview_domains, max_questions, name=request.name, pronoun=request.pronoun, career_level=request.career_level, industry=request.industry)
     
     return StartInterviewResponse(
         session_id=result["session_id"],
