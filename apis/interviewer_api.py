@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Form
+from fastapi import APIRouter, HTTPException,WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 import uuid
@@ -8,6 +8,8 @@ from utils.langgraph_interviewer import LangGraphInterviewer
 from utils.database import InterviewDatabase
 from utils.state_manager import Persona, CandidatePersona
 from utils.trait_analyzer import generate_persona_report
+from utils.state_for_websocket import reconstruct_interview_state
+
 
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
 
@@ -129,7 +131,7 @@ async def submit_response(request: SubmitResponseRequest):
 async def get_progress(session_id: str):
     """Get current interview progress"""
     try:
-        progress = interviewer.get_progress()
+        progress = interviewer.get_progress(session_id)
         return ProgressResponse(progress=progress)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")
@@ -138,7 +140,7 @@ async def get_progress(session_id: str):
 async def get_results(session_id: str):
     """Get current interview results"""
     try:
-        results = interviewer.get_results()
+        results = interviewer.get_results(session_id)
         return ResultsResponse(results=results)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get results: {str(e)}")
@@ -249,3 +251,54 @@ async def get_all_interviews_by_user_id(user_id: str):
                 interviews=interviews)
     else:
         return "User not found"
+
+
+
+@router.websocket("/submit/stream")
+async def submit_response_stream(websocket: WebSocket):
+    """WebSocket endpoint for streaming interview responses"""
+    await websocket.accept()
+
+    try: 
+        data = await websocket.receive_json()
+        user_response = data.get("user_response")
+        session_id = data.get("session_id")
+
+        if not user_response or not session_id:
+            await websocket.send_json({
+                "type": "error",
+                "message": "user_response and session_id are required"
+            })
+            await websocket.close() 
+            return 
+
+        if not user_response.strip(): 
+            await websocket.send_json({
+                "type":"error",
+                "message": "User response cannot be empty"
+            
+            }) 
+            await websocket.close() 
+            return 
+
+        # Get the graph and config
+        config = {"configurable": {"thread_id": session_id}}
+
+        # Check if session exists 
+
+        current_state = interviewer.graph.get_state(config) 
+        if not current_state.values: 
+            await websocket.send_json({
+                "type":"error",
+                "message": f"No active session found for {session_id}"
+            })
+            await websocket.close()
+            return
+
+        state = reconstruct_interview_state(user_response, session_id, current_state.values)
+
+        # Track streaming state 
+
+    except Exception as e:
+        pass
+        

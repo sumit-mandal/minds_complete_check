@@ -81,36 +81,20 @@ def generate_introduction_question(persona: Persona, candidate_persona: Candidat
     """Generate completely dynamic AI-based introduction question with persona and candidate context"""
     
     try:
-        # Get persona-specific communication style
-        persona_style = PersonaHelper.get_persona_style(persona)
-        candidate_context = PersonaHelper.get_candidate_persona_context(candidate_persona)
-        
-        # Build customization context from new fields
-        customization_context = ""
-        if pronoun:
-            customization_context += f"\n- Use the pronoun '{pronoun}' when referring to the candidate.\n"
-        if career_level:
-            customization_context += f"\n- The candidate's career level is: {career_level}. Tailor your question to reflect their experience level.\n"
-        if industry:
-            customization_context += f"\n- The candidate works in the {industry} industry. Consider industry-specific context when framing your question.\n"
+        # Get base persona prompt (shared with question generation)
+        base_prompt = PersonaHelper.get_base_persona_prompt(persona, candidate_persona, pronoun, career_level, industry)
         
         # Create a completely AI-driven introduction prompt
         introduction_prompt = ChatPromptTemplate.from_messages([
-            ("system", f"""You are an expert interviewer embodying the role of a {persona.value.replace('_', ' ')}.
-
-Your communication style should be:
-- Tone: {persona_style['tone']}
-- Approach: {persona_style['approach']}
-- Language: {persona_style['language_style']}
-
-{candidate_context}
-{customization_context}
+            ("system", f"""{base_prompt}
 
 Create a warm, engaging introduction question that:
 1. Starts with a natural, friendly greeting using the person's name: {name}
 2. Uses their name to make them feel comfortable and welcomed
-3. Asks about something personal to help them feel at ease, Boost their confidence and make them feel comfortable to share their thoughts and ideas.
-4. You can Ask about their goals and aspirations, their dreams and ambitions, their hopes and dreams, their fears and doubts, their strengths and weaknesses, their past experiences and future plans, hobbies and interests, favorite books and movies and TV shows and music and anything else that they are passionate about.
+3. Asks about something personal to help them feel at ease and boost their confidence
+4. Can ask about their goals, aspirations, interests, hobbies, or anything they're passionate about
+5. IMPORTANT: Introduction Question should be 100% unique and never asked before in any other interview or conversation.
+6. IMPORTANT: candidate_persona should be taken into account when generating the introduction question. For example, if the candidate is a student, the introduction question should be more academic and focused on their studies and goals. If the candidate is a professional, the introduction question should be more professional and focused on their career and goals.
 5. Is contextually appropriate for their background (student vs professional)
 6. Feels authentic and conversational
 7. Is under 300 characters total

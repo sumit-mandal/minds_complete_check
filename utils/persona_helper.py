@@ -69,12 +69,8 @@ class PersonaHelper:
             return """The candidate is a PROFESSIONAL. Adapt your questions to their workplace background and career experiences. Consider their professional journey, work environment, and career achievements when framing questions."""
     
     @classmethod
-    def get_question_generation_prompt(cls, persona: Persona, candidate_persona: CandidatePersona, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None) -> str:
-        """Get persona-specific prompt for question generation - completely dynamic"""
-        style = cls.get_persona_style(persona)
-        candidate_context = cls.get_candidate_persona_context(candidate_persona)
-        
-        # Build customization context from new fields
+    def build_customization_context(cls, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None) -> str:
+        """Build customization context string from optional fields"""
         customization_context = ""
         if pronoun:
             customization_context += f"\n- Use the pronoun '{pronoun}' when referring to the candidate.\n"
@@ -82,6 +78,14 @@ class PersonaHelper:
             customization_context += f"\n- The candidate's career level is: {career_level}. Tailor your questions to reflect their experience level and use appropriate terminology.\n"
         if industry:
             customization_context += f"\n- The candidate works in the {industry} industry. Consider industry-specific context, challenges, and terminology when framing your questions.\n"
+        return customization_context
+    
+    @classmethod
+    def get_base_persona_prompt(cls, persona: Persona, candidate_persona: CandidatePersona, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None) -> str:
+        """Get the base persona prompt header (shared by introduction and question generation prompts)"""
+        style = cls.get_persona_style(persona)
+        candidate_context = cls.get_candidate_persona_context(candidate_persona)
+        customization_context = cls.build_customization_context(pronoun, career_level, industry)
         
         return f"""You are an expert interviewer embodying the role of a {persona.value.replace('_', ' ')}. 
 
@@ -91,7 +95,14 @@ Your communication style should be:
 - Language: {style['language_style']}
 
 {candidate_context}
-{customization_context}
+{customization_context}"""
+    
+    @classmethod
+    def get_question_generation_prompt(cls, persona: Persona, candidate_persona: CandidatePersona, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None) -> str:
+        """Get persona-specific prompt for question generation - completely dynamic"""
+        base_prompt = cls.get_base_persona_prompt(persona, candidate_persona, pronoun, career_level, industry)
+        
+        return f"""{base_prompt}
 
 When generating questions:
 1. Be completely original and creative - no fixed patterns or templates
