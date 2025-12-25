@@ -462,7 +462,11 @@ class InterviewDatabase:
     def get_conversation_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Generate or retrieve an LLM-based summary for a session"""
         from utils.graph_3_llm_helper import evaluation_llm
+        from utils.persona_helper import PersonaHelper
+        from utils.state_manager import Persona, CandidatePersona
+        from utils.langgraph_interviewer import LangGraphInterviewer
         import json
+        
         def _json_default(obj):
             if isinstance(obj, uuid.UUID):
                 return str(obj)
@@ -474,6 +478,47 @@ class InterviewDatabase:
         session_data = self.get_session_data(session_id)
         if not session_data:
             return None
+        
+        # Try to get candidate info from LangGraph state
+        name = None
+        persona = None
+        candidate_persona = None
+        pronoun = None
+        career_level = None
+        industry = None
+        
+        try:
+            interviewer = LangGraphInterviewer()
+            config = {"configurable": {"thread_id": session_id}}
+            current_state = interviewer.graph.get_state(config)
+            if current_state.values:
+                name = current_state.values.get("name")
+                persona_value = current_state.values.get("persona")
+                candidate_persona_value = current_state.values.get("candidate_persona")
+                pronoun = current_state.values.get("pronoun")
+                career_level = current_state.values.get("career_level")
+                industry = current_state.values.get("industry")
+                
+                # Convert to enums if needed
+                if persona_value:
+                    if isinstance(persona_value, str):
+                        try:
+                            persona = Persona(persona_value)
+                        except ValueError:
+                            persona = None
+                    else:
+                        persona = persona_value
+                if candidate_persona_value:
+                    if isinstance(candidate_persona_value, str):
+                        try:
+                            candidate_persona = CandidatePersona(candidate_persona_value)
+                        except ValueError:
+                            candidate_persona = None
+                    else:
+                        candidate_persona = candidate_persona_value
+        except Exception as e:
+            print(f"Could not retrieve candidate info from LangGraph state: {e}")
+            # Continue without personalization if state is not available
         
         conversation_data = {
             "session_info": session_data["session"],
@@ -498,9 +543,48 @@ class InterviewDatabase:
             
             conversation_data["responses"].append(response_data)
         
-        summary_prompt = f"""You are an expert interview analyst. Analyze the conversation and produce a JSON summary.
+        # Build personalization context
+        personalization_context = ""
+        if name:
+            personalization_context += f"\nCandidate Name: {name}\n"
+        if pronoun:
+            personalization_context += f"Use the pronoun '{pronoun}' when referring to the candidate.\n"
+        if career_level:
+            personalization_context += f"Career Level: {career_level}\n"
+        if industry:
+            personalization_context += f"Industry: {industry}\n"
+        if persona:
+            personalization_context += f"Interview Persona: {persona.value.replace('_', ' ').title()}\n"
+        if candidate_persona:
+            personalization_context += f"Candidate Type: {candidate_persona.value.title()}\n"
+        
+        # Get persona style for personalization
+        persona_style = None
+        if persona:
+            persona_style = PersonaHelper.get_persona_style(persona)
+        
+        # Build persona-specific tone guidance
+        tone_guidance = ""
+        if persona_style:
+            tone_guidance = f"""
+Write the summary in a {persona_style['tone']} manner, with a {persona_style['approach']} approach, using {persona_style['language_style']} language. Make it feel personal and authentic, as if written by a {persona.value.replace('_', ' ')} who genuinely cares about {name if name else 'the candidate'}'s growth and development.
+"""
+        
+        summary_prompt = f"""You are an expert interview analyst. Analyze the conversation and produce a personalized JSON summary.
 
-Conversation Data: {json.dumps(conversation_data, indent=2,default=_json_default)}
+{personalization_context}
+
+Conversation Data: {json.dumps(conversation_data, indent=2, default=_json_default)}
+
+{tone_guidance}
+
+When writing the summary:
+- Address {name if name else 'the candidate'} directly by name if provided
+- Use {pronoun if pronoun else 'their'} pronouns appropriately
+- Reflect on their specific journey and context (career level, industry if provided)
+- Make it feel personal and meaningful, not generic or dry
+- Highlight what makes {name if name else 'them'} unique based on their responses
+- Keep the summary detailed and comprehensive, but not too long. And it should not feel dry or generic.
 
 Return JSON like:
 {{
@@ -513,7 +597,7 @@ Return JSON like:
     "professional_maturity": "Shows leadership",
     "specific_examples": ["Handled team conflict well"],
     "recommendations": ["Give concrete numbers"],
-    "overall_impression": "Strong candidate with room to grow"
+    "overall_impression": "Personalized impression that addresses {name if name else 'the candidate'} by name and feels warm and engaging"
 }}
 Return JSON only."""
         

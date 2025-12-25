@@ -249,8 +249,18 @@ def evaluate_response(state: InterviewState) -> InterviewState:
         progress["covered_skills"] >= progress["total_skills"] or
         question_count >= state["max_questions"]):
         
-        # Generate summary
-        summary = generate_summary(state_manager)
+        # Generate summary with personalization
+        persona = ensure_persona_enum(state.get("persona", Persona.MENTOR))
+        candidate_persona = ensure_candidate_persona_enum(state.get("candidate_persona", CandidatePersona.PROFESSIONAL))
+        summary = generate_summary(
+            state_manager,
+            name=state.get("name"),
+            persona=persona,
+            candidate_persona=candidate_persona,
+            pronoun=state.get("pronoun"),
+            career_level=state.get("career_level"),
+            industry=state.get("industry")
+        )
         final_results = state_manager.export_results()
         completion_reason = get_completion_reason(progress, question_count, state["max_questions"])
         
@@ -305,8 +315,18 @@ def generate_question(state: InterviewState) -> InterviewState:
         progress["covered_skills"] >= progress["total_skills"] or
         question_count >= state["max_questions"]):
         
-        # Generate summary
-        summary = generate_summary(state_manager)
+        # Generate summary with personalization
+        persona = ensure_persona_enum(state.get("persona", Persona.MENTOR))
+        candidate_persona = ensure_candidate_persona_enum(state.get("candidate_persona", CandidatePersona.PROFESSIONAL))
+        summary = generate_summary(
+            state_manager,
+            name=state.get("name"),
+            persona=persona,
+            candidate_persona=candidate_persona,
+            pronoun=state.get("pronoun"),
+            career_level=state.get("career_level"),
+            industry=state.get("industry")
+        )
         final_results = state_manager.export_results()
         completion_reason = get_completion_reason(progress, question_count, state["max_questions"])
         
@@ -745,28 +765,65 @@ def get_completion_reason(progress: Dict[str, Any], question_count: int, max_que
     else:
         return "Unknown completion reason"
 
-def generate_summary(state_manager: StateManager) -> Dict[str, Any]:
-    """Generate interview summary"""
+def generate_summary(state_manager: StateManager, name: Optional[str] = None, persona: Optional[Persona] = None, candidate_persona: Optional[CandidatePersona] = None, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None) -> Dict[str, Any]:
+    """Generate personalized interview summary"""
     
     results = state_manager.export_results()
     user_responses = state_manager.state.user_responses
     
+    # Get persona style for personalization
+    persona_style = None
+    if persona:
+        persona_style = PersonaHelper.get_persona_style(persona)
+    
+    # Build personalization context
+    personalization_context = ""
+    if name:
+        personalization_context += f"\nCandidate Name: {name}\n"
+    if pronoun:
+        personalization_context += f"Use the pronoun '{pronoun}' when referring to the candidate.\n"
+    if career_level:
+        personalization_context += f"Career Level: {career_level}\n"
+    if industry:
+        personalization_context += f"Industry: {industry}\n"
+    if persona:
+        personalization_context += f"Interview Persona: {persona.value.replace('_', ' ').title()}\n"
+    if candidate_persona:
+        personalization_context += f"Candidate Type: {candidate_persona.value.title()}\n"
+    
+    # Build persona-specific tone guidance
+    tone_guidance = ""
+    if persona_style:
+        tone_guidance = f"""
+Write the overall assessment in a {persona_style['tone']} manner, with a {persona_style['approach']} approach, using {persona_style['language_style']} language. Make it feel personal and authentic, as if written by a {persona.value.replace('_', ' ')} who genuinely cares about {name if name else 'the candidate'}'s growth and development.
+"""
+    
     try:
-        # Use a simpler approach without structured output to avoid validation issues
-        summary_prompt = f"""You are an expert interview analyst. Generate a comprehensive summary of the interview results.
+        # Use a personalized approach with persona-specific tone
+        summary_prompt = f"""You are an expert interview analyst writing a personalized assessment report. Generate a comprehensive, warm, and engaging summary of the interview results.
+
+{personalization_context}
 
 Interview Results: {json.dumps(results, indent=2)}
 User Responses: {json.dumps(user_responses, indent=2)}
 
-Create a detailed summary including:
-1. Overall assessment score and interpretation
-2. Domain-specific scores and analysis
-3. Key strengths identified
-4. Areas for improvement
-5. Specific recommendations for growth
-6. Overall impressions and insights
+{tone_guidance}
 
-Be thorough, professional, and constructive in your analysis.
+Create a detailed summary including:
+1. Overall assessment - Write a personalized, engaging overall assessment that:
+   - Addresses {name if name else 'the candidate'} directly by name
+   - Uses {pronoun if pronoun else 'their'} pronouns appropriately
+   - Reflects on their specific journey and context (career level, industry if provided)
+   - Incorporates the {persona.value.replace('_', ' ') if persona else 'mentor'} persona tone - {persona_style['tone'] if persona_style else 'warm and supportive'}
+   - Makes it feel personal and meaningful, not generic or dry
+   - Highlights what makes {name if name else 'them'} unique based on their responses
+2. Domain-specific scores and analysis
+3. Key strengths identified - Frame these in a way that celebrates {name if name else 'the candidate'}'s unique qualities
+4. Areas for improvement - Present these constructively and supportively
+5. Specific recommendations for growth - Tailor these to {name if name else 'their'} career level and industry context
+6. Overall impressions and insights - Make this section feel like a genuine reflection on {name if name else 'the candidate'}'s potential
+
+Be thorough, {persona_style['tone'] if persona_style else 'warm'}, and constructive in your analysis. Write as if you're speaking directly to {name if name else 'the candidate'} or about {name if name else 'them'} in a way that feels personal and authentic.
 
 Return your response as a JSON object with the following structure:
 {{
@@ -774,7 +831,7 @@ Return your response as a JSON object with the following structure:
     "strengths": ["strength1", "strength2", ...],
     "areas_for_improvement": ["area1", "area2", ...],
     "recommendations": ["recommendation1", "recommendation2", ...],
-    "analysis": "detailed analysis text"
+    "analysis": "detailed, personalized analysis text that addresses the candidate by name and feels warm and engaging"
 }}"""
 
         # Use the regular LLM instead of structured output
