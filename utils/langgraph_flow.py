@@ -95,12 +95,13 @@ Create a warm, engaging introduction question that:
 4. Can ask about their goals, aspirations, interests, hobbies, or anything they're passionate about
 5. IMPORTANT: Introduction Question should be 100% unique and never asked before in any other interview or conversation.
 6. IMPORTANT: candidate_persona should be taken into account when generating the introduction question. For example, if the candidate is a student, the introduction question should be more academic and focused on their studies and goals. If the candidate is a professional, the introduction question should be more professional and focused on their career and goals.
-5. Is contextually appropriate for their background (student vs professional)
-6. Feels authentic and conversational
-7. Is under 300 characters total
-8. Varies every time - be creative and unique
-9. Makes them feel comfortable and excited to share
-10. Incorporates their career level and industry context naturally if provided
+7. Never ask any question that says outside of your work to a professional candidate . Since they are professionals they should be asked only about their work and career.
+8. Is contextually appropriate for their background (student vs professional)
+9. Feels authentic and conversational
+10. Is under 300 characters total
+11. Varies every time - be creative and unique
+12. Makes them feel comfortable and excited to share
+13. IMPORTANT: Incorporates their career level and industry context naturally if provided
 
 Generate a unique, authentic introduction question that naturally flows and feels personal.
 Return ONLY the question text, nothing else."""),

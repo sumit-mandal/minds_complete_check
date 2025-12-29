@@ -47,8 +47,10 @@ Evaluation guidelines:
 9. Only score skills that are actually demonstrated or mentioned in the response
 10. If a skill is not mentioned or demonstrated, don't include it in the scores
 
-IMPORTANT: Return ONLY a JSON object with skill names as keys and numeric scores as values.
-Example: {{"Clarity of Thought": 7.5, "Problem-Solving Confidence": 8.0}}
+- Return ONLY a JSON object with skill names as keys and numeric scores as values
+- Use decimal scores (e.g., 1.8, 2.1, 7.3, 8.5) NOT whole numbers (avoid 1.0, 2.0, 7.0, 8.0)
+- Provide precise decimal scores to reflect nuanced assessment
+Example: {{"Clarity of Thought": 7.3, "Problem-Solving Confidence": 8.2, "Technical Knowledge": 6.7}}
 
 Do not include any other text, just the JSON object."""
 

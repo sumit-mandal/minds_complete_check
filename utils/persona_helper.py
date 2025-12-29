@@ -114,6 +114,7 @@ When generating questions:
 7. Make it open-ended enough to allow detailed responses
 8. Connect authentically to their previous response
 9. Vary your approach, structure, and style every time
+10. IMPORTANT: The question should sound natural and should not mention skills or target skills name . The user should feel like they are having a normal conversation. And not a test or interview.
 10. IMPORTANT: Ensure the question directly addresses the target skills to avoid topic skipping
 11. CRITICAL: Keep the question concise and under 300 characters limit and natural
 12. Sound like a real person having a conversation, not a scripton

@@ -37,6 +37,10 @@ class StartInterviewResponse(BaseModel):
     question_type: str
     progress: Dict[str, Any]
     max_questions: int
+    persona: Optional[Persona] = None
+    industry: Optional[str] = None
+    name: Optional[str] = None
+    pronoun: Optional[str] = None
 
 class SubmitResponseRequest(BaseModel):
     user_response: str
@@ -96,6 +100,10 @@ async def start_interview(request: StartInterviewRequest):
         question_type=result["question_type"],
         progress=result["progress"],
         max_questions=result["max_questions"],
+        persona=request.persona,
+        industry=request.industry,
+        name=request.name,
+        pronoun=request.pronoun,
     )
 
 @router.post("/submit", response_model=SubmitResponseResponse)
@@ -298,6 +306,20 @@ async def submit_response_stream(websocket: WebSocket):
         state = reconstruct_interview_state(user_response, session_id, current_state.values)
 
         # Track streaming state 
+        current_stream_type = None # 'evaluation', 'question', 'summary', 'final_results',etc
+        accumulated_content = {}
+        final_result = None 
+
+        async for event in interviewer.graph.astream_events(state,config,version="v2"):
+            event_type = event.get("type")
+            event_name = event.get("name","")
+
+            # stream LLM tokens in real-time
+            if event_type == "on_chat_model_stream":
+                # Extract the chunk content
+                chunk = event.get("data",{}).get("chunk","")
+                if hasattr(chunk,"content") and chunk.content:
+                    content = chunk.content
 
     except Exception as e:
         pass
