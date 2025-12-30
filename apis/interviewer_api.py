@@ -9,6 +9,7 @@ from utils.database import InterviewDatabase
 from utils.state_manager import Persona, CandidatePersona
 from utils.trait_analyzer import generate_persona_report
 from utils.state_for_websocket import reconstruct_interview_state
+from utils.graph_3_llm_helper import generate_domain_summary
 
 
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
@@ -248,6 +249,11 @@ class UserInterviewsResponse(BaseModel):
     user_id: str
     total_sessions: int
     interviews: List[Dict[str, Any]]
+
+class DomainSummaryResponse(BaseModel):
+    session_id: str
+    domain_summary: Dict[str, Any]
+    cached: bool = False
     
 @router.get("/user/{user_id}/interviews", response_model=UserInterviewsResponse)
 async def get_all_interviews_by_user_id(user_id: str): 
@@ -259,6 +265,93 @@ async def get_all_interviews_by_user_id(user_id: str):
                 interviews=interviews)
     else:
         return "User not found"
+
+@router.get("/domains-summary/{session_id}", response_model=DomainSummaryResponse)
+async def get_domains_summary(session_id: str):
+    """Get a comprehensive summary of all domains covered in the interview"""
+    try:
+        # Check if session exists
+        session_data = database.get_session_data(session_id)
+        if not session_data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Check if domain summary already exists in database
+        cached_summary = database.get_domain_summary(session_id)
+        if cached_summary:
+            return DomainSummaryResponse(
+                session_id=session_id,
+                domain_summary=cached_summary,
+                cached=True
+            )
+        
+        # Get final results
+        final_results = session_data.get("final_results", {})
+        hierarchical_results = final_results.get("hierarchical_results", {})
+        domain_scores = final_results.get("domain_scores", {})
+        
+        if not hierarchical_results and not domain_scores:
+            raise HTTPException(
+                status_code=404, 
+                detail="No domain data found for this session. The interview may not be completed yet."
+            )
+        
+        # Get conversation summary if available
+        conversation_summary_data = database.get_conversation_summary(session_id)
+        conversation_summary = conversation_summary_data.get("conversation_summary") if conversation_summary_data else None
+        
+        # Get candidate info from LangGraph state if available
+        name = None
+        pronoun = None
+        career_level = None
+        industry = None
+        persona = None
+        
+        try:
+            interviewer = LangGraphInterviewer()
+            config = {"configurable": {"thread_id": session_id}}
+            current_state = interviewer.graph.get_state(config)
+            if current_state.values:
+                name = current_state.values.get("name")
+                pronoun = current_state.values.get("pronoun")
+                career_level = current_state.values.get("career_level")
+                industry = current_state.values.get("industry")
+                persona_value = current_state.values.get("persona")
+                if persona_value:
+                    if isinstance(persona_value, str):
+                        try:
+                            persona = Persona(persona_value).value
+                        except ValueError:
+                            persona = str(persona_value)
+                    else:
+                        persona = persona_value.value if hasattr(persona_value, 'value') else str(persona_value)
+        except Exception as e:
+            print(f"Could not retrieve candidate info from LangGraph state: {e}")
+        
+        # Generate domain summary
+        domain_summary = generate_domain_summary(
+            hierarchical_results=hierarchical_results,
+            domain_scores=domain_scores,
+            conversation_summary=conversation_summary,
+            name=name,
+            pronoun=pronoun,
+            career_level=career_level,
+            industry=industry,
+            persona=persona
+        )
+        
+        # Save to database
+        database.save_domain_summary(session_id, domain_summary)
+        
+        return DomainSummaryResponse(
+            session_id=session_id,
+            domain_summary=domain_summary,
+            cached=False
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate domain summary: {str(e)}")
 
 
 

@@ -631,6 +631,41 @@ Return JSON only."""
                 "conversation_data": conversation_data
             }
 
+    def save_domain_summary(self, session_id: str, domain_summary: Dict[str, Any]):
+        """Save domain summary to the final_results table"""
+        with get_db_session() as db:
+            final_result = (
+                db.query(FinalResult)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .first()
+            )
+            
+            if final_result:
+                # Update existing summary with domain_summary
+                current_summary = final_result.summary if final_result.summary else {}
+                current_summary["domain_summary"] = domain_summary
+                final_result.summary = current_summary
+            else:
+                # Create new final_result entry with domain_summary
+                final_result = FinalResult(
+                    session_id=self._to_uuid(session_id),
+                    summary={"domain_summary": domain_summary}
+                )
+                db.add(final_result)
+
+    def get_domain_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve domain summary from the final_results table"""
+        with get_db_session() as db:
+            final_result = (
+                db.query(FinalResult)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .first()
+            )
+            
+            if final_result and final_result.summary:
+                return final_result.summary.get("domain_summary")
+            return None
+
 
 
 
