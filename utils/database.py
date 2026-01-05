@@ -666,6 +666,19 @@ Return JSON only."""
                 return final_result.summary.get("domain_summary")
             return None
 
+    def get_previous_questions(self, session_id: str, limit: int = 10) -> List[str]:
+        """Get previously asked questions for a session"""
+        with get_db_session() as db:
+            responses = (
+                db.query(InterviewResponse)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .order_by(InterviewResponse.question_number.desc())
+                .limit(limit)
+                .all()
+            )
+            # Return questions in chronological order (oldest first)
+            return [r.question_text for r in reversed(responses) if r.question_text]
+
 
 
 

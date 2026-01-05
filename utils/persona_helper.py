@@ -113,13 +113,21 @@ When generating questions:
 6. Ask for specific examples or experiences related to the target skills
 7. Make it open-ended enough to allow detailed responses
 8. Connect authentically to their previous response
-9. Vary your approach, structure, and style every time
-10. IMPORTANT: The question should sound natural and should not mention skills or target skills name . The user should feel like they are having a normal conversation. And not a test or interview.
-10. IMPORTANT: Ensure the question directly addresses the target skills to avoid topic skipping
-11. CRITICAL: Keep the question concise and under 300 characters limit and natural
-12. Sound like a real person having a conversation, not a scripton
-13. Incorporate their career level and industry context naturally if provided
-14. Try to understand from the context, sometime user might give the answer in a way that is not related to the target skills or is completely different or vague, so you need to first understand the context and then ask follow-up questions to get the answer in the right format, and bring user back to the right track.
+9. Vary your approach, structure, and style every time - NEVER repeat similar phrasing or structures
+10. IMPORTANT: The question should sound natural and should not mention skills or target skills name. The user should feel like they are having a normal conversation. And not a test or interview.
+11. IMPORTANT: Ensure the question directly addresses the target skills to avoid topic skipping
+12. CRITICAL: Keep the question concise and under 300 characters limit and natural
+13. Sound like a real person having a conversation, not a script
+14. Incorporate their career level and industry context naturally if provided
+15. Try to understand from the context, sometimes user might give the answer in a way that is not related to the target skills or is completely different or vague, so you need to first understand the context and then ask follow-up questions to get the answer in the right format, and bring user back to the right track.
+16. CRITICAL ANTI-REPETITION RULES:
+    - NEVER start multiple questions with the same phrase (e.g., avoid repeatedly using "In your consulting work", "Thinking about", "Can you share")
+    - Vary opening phrases dramatically: use questions, statements, reflections, hypotheticals, etc.
+    - Change sentence structure completely: vary between direct questions, conditional questions, reflective prompts
+    - Use different vocabulary and terminology - avoid repeating the same words/phrases
+    - Shift perspectives: if you asked about challenges, ask about successes; if about teams, ask about individual work
+    - Explore different angles: process vs. outcome, individual vs. team, past vs. future, technical vs. interpersonal
+    - Each question should feel like a completely fresh conversation, not a variation of previous ones
 
-Generate a unique, authentic question that naturally follows from their previous response and assesses the target skills, while maintaining the {persona.value.replace('_', ' ')} persona throughout. Make it feel fresh and personal every time."""
+Generate a unique, authentic question that naturally follows from their previous response and assesses the target skills, while maintaining the {persona.value.replace('_', ' ')} persona throughout. Make it feel fresh and personal every time - completely different from any previous questions."""
     

@@ -368,7 +368,22 @@ def generate_question(state: InterviewState) -> InterviewState:
     pronoun = state.get("pronoun")
     career_level = state.get("career_level")
     industry = state.get("industry")
-    next_question_result = get_next_question_contextual(state_manager, state["last_response"], state["evaluation"], persona, candidate_persona, pronoun=pronoun, career_level=career_level, industry=industry)
+    
+    # Get previous questions to avoid repetition
+    database = InterviewDatabase()
+    previous_questions = database.get_previous_questions(state["session_id"], limit=10)
+    
+    next_question_result = get_next_question_contextual(
+        state_manager, 
+        state["last_response"], 
+        state["evaluation"], 
+        persona, 
+        candidate_persona, 
+        pronoun=pronoun, 
+        career_level=career_level, 
+        industry=industry,
+        previous_questions=previous_questions
+    )
     
     return {
         **state,
@@ -574,7 +589,7 @@ def update_state_manager(state_manager: StateManager, user_response: str, evalua
     if isinstance(skill_scores, dict):
         state_manager.update_skill_scores(skill_scores, response_data)
 
-def get_next_question_contextual(state_manager: StateManager, user_response: str, evaluation: Dict[str, Any], persona: Persona, candidate_persona: CandidatePersona, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None) -> Dict[str, Any]:
+def get_next_question_contextual(state_manager: StateManager, user_response: str, evaluation: Dict[str, Any], persona: Persona, candidate_persona: CandidatePersona, pronoun: Optional[str] = None, career_level: Optional[str] = None, industry: Optional[str] = None, previous_questions: Optional[List[str]] = None) -> Dict[str, Any]:
     """Get the next question based on previous response and remaining skills"""
     
     # Get uncovered skills
@@ -620,17 +635,38 @@ def get_next_question_contextual(state_manager: StateManager, user_response: str
         # Get persona-specific prompt
         persona_prompt = PersonaHelper.get_question_generation_prompt(persona, candidate_persona, pronoun=pronoun, career_level=career_level, industry=industry)
         
+        # Build previous questions context
+        previous_questions_context = ""
+        if previous_questions and len(previous_questions) > 0:
+            previous_questions_context = f"""
+CRITICAL: Avoid repeating similar questions. Here are the previous {len(previous_questions)} questions asked:
+{chr(10).join([f"{i+1}. {q}" for i, q in enumerate(previous_questions)])}
+
+IMPORTANT GUIDELINES TO AVOID REPETITION:
+- Do NOT use similar opening phrases (e.g., "In your consulting work", "Thinking about your consulting work", "In a government consulting project")
+- Do NOT ask about the same type of situation/scenario multiple times
+- Vary your question structure completely - use different sentence patterns, question types, and approaches
+- If previous questions mentioned specific contexts (e.g., "consulting work", "government consulting"), find NEW angles or contexts
+- Use completely different phrasing, vocabulary, and sentence structure
+- Make each question feel fresh and unique - avoid any patterns from previous questions
+- Consider asking from different perspectives or about different aspects of their experience
+- Change the focus: if previous questions were about challenges, ask about successes; if about teams, ask about individual work, etc.
+"""
+        
         question_prompt = ChatPromptTemplate.from_messages([
             ("system", f"""{persona_prompt}
 
 Previous user response: {{previous_response}}
 Skills to assess: {{skill_details}}
 Last evaluation: {{last_evaluation}}
+{previous_questions_context}
 
 Generate a question that naturally follows from their previous response and assesses the target skills.
 
+CRITICAL: The question MUST be completely different from all previous questions in structure, phrasing, opening, and approach. Avoid any patterns or similarities.
+
 Return your response in JSON format with these fields:
-- question_text: The interview question to ask
+- question_text: The interview question to ask (MUST be unique and different from previous questions)
 - target_skills: List of core skills this question assesses
 - question_type: Type of question (behavioral, situational, technical, etc.)
 - difficulty_level: Easy, Medium, or Hard
