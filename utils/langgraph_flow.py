@@ -854,12 +854,12 @@ Create a detailed summary including:
    - Incorporates the {persona.value.replace('_', ' ') if persona else 'mentor'} persona tone - {persona_style['tone'] if persona_style else 'warm and supportive'}
    - Makes it feel personal and meaningful, not generic or dry
    - Highlights what makes {name if name else 'them'} unique based on their responses
-2. Domain-specific scores and analysis
+2. Domain-specific scores and analysis, but don't reveal domain names. Instead make it more humanely.
 3. Key strengths identified - Frame these in a way that celebrates {name if name else 'the candidate'}'s unique qualities
 4. Areas for improvement - Present these constructively and supportively
 5. Specific recommendations for growth - Tailor these to {name if name else 'their'} career level and industry context
 6. Overall impressions and insights - Make this section feel like a genuine reflection on {name if name else 'the candidate'}'s potential
-
+7. The language of summary should be very simple english, and it should be in a way that it is telling a story to the candidate.
 Be thorough, {persona_style['tone'] if persona_style else 'warm'}, and constructive in your analysis. Write as if you're speaking directly to {name if name else 'the candidate'} or about {name if name else 'them'} in a way that feels personal and authentic.
 
 Return your response as a JSON object with the following structure:

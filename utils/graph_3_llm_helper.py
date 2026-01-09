@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 load_dotenv()
 api_key = os.getenv("API_KEY")
@@ -31,29 +31,46 @@ evaluation_llm = ChatGoogleGenerativeAI(
 def evaluate_response_with_llm(user_response: str, all_skills: list) -> dict:
     """Evaluate response using LLM without structured output to avoid parsing issues"""
     
-    evaluation_prompt = f"""You are an expert evaluator. Analyze the user's response and assign scores to ALL skills that are demonstrated or mentioned in the response.
+    evaluation_prompt = f"""You are a strict expert evaluator. Analyze the user's response and ONLY assign scores to skills that are CLEARLY and CONCRETELY demonstrated with specific evidence.
 
 Available skills to evaluate: {json.dumps(all_skills, indent=2)}
 User response: {user_response}
 
-Evaluation guidelines:
-1. Score each skill on a scale of 0-10
-2. 0-3: Poor or no demonstration of the skill
-3. 4-6: Basic demonstration with room for improvement
-4. 7-8: Good demonstration of the skill
-5. 9-10: Excellent demonstration of the skill
-6. Consider both knowledge and practical application
-7. Look for specific examples and experiences
-8. Assess confidence and clarity in the response
-9. Only score skills that are actually demonstrated or mentioned in the response
-10. If a skill is not mentioned or demonstrated, don't include it in the scores
+CRITICAL EVALUATION RULES:
+1. VAGUE/GENERIC RESPONSES: If the response is vague, generic, or lacks specific examples, assign scores of 0-3 ONLY. Generic statements like "working with people" or "solving problems together" are NOT sufficient evidence.
 
-- Return ONLY a JSON object with skill names as keys and numeric scores as values
-- Use decimal scores (e.g., 1.8, 2.1, 7.3, 8.5) NOT whole numbers (avoid 1.0, 2.0, 7.0, 8.0)
-- Provide precise decimal scores to reflect nuanced assessment
-Example: {{"Clarity of Thought": 7.3, "Problem-Solving Confidence": 8.2, "Technical Knowledge": 6.7}}
+2. SCORING SCALE (0-10):
+   - 0-2: No demonstration or only vague/generic mention with no evidence
+   - 2-3: Weak or tangential mention, no concrete examples
+   - 3-5: Basic demonstration with minimal evidence or a single vague example
+   - 5-7: Clear demonstration with specific examples or concrete evidence
+   - 7-9: Strong demonstration with detailed examples and clear evidence
+   - 9-10: Excellent demonstration with multiple specific examples and strong evidence
 
-Do not include any other text, just the JSON object."""
+3. EVIDENCE REQUIREMENTS:
+   - A skill must be demonstrated through SPECIFIC examples, concrete actions, or detailed descriptions
+   - Generic statements (e.g., "I work with teams", "I solve problems") do NOT demonstrate skills
+   - Brief, vague responses should receive scores of 0-3, not 5-6
+   - Only score skills where you can identify CLEAR, CONCRETE evidence in the response
+
+4. SKILL SELECTION:
+   - ONLY score skills that are EXPLICITLY demonstrated with concrete evidence
+   - Do NOT score skills based on assumptions or vague connections
+   - If a response is too vague to evaluate most skills, only score 1-3 skills at most
+   - Be conservative: when in doubt, do NOT score the skill
+
+5. RESPONSE QUALITY ASSESSMENT:
+   - Short, vague responses (< 20 words) should typically score 0-3 for most skills
+   - Responses without specific examples should score 0-3
+   - Generic statements about teamwork, problem-solving, etc. should score 0-3
+
+6. DECIMAL SCORING:
+   - Use decimal scores (e.g., 1.8, 2.1, 3.4, 7.3, 8.5) NOT whole numbers
+   - Avoid scores like 5.0, 6.0 - use 4.8, 5.2, 6.3 instead
+
+IMPORTANT: For vague responses like "working with interesting people as we solve those roles together as a team", this is a generic statement with no concrete evidence. Most skills should receive scores of 0-3, and only 1-3 skills at most should be scored if there's any minimal evidence.
+
+Return ONLY a JSON object with skill names as keys and numeric scores as values. Do not include any other text, just the JSON object."""
 
     try:
         response = evaluation_llm.invoke(evaluation_prompt)
@@ -94,100 +111,98 @@ def generate_domain_summary(hierarchical_results: Dict[str, Any], domain_scores:
     # Build personalization context
     personalization_context = ""
     if name:
-        personalization_context += f"\nCandidate Name: {name}\n"
+        personalization_context += f"Candidate: {name}. "
     if pronoun:
-        personalization_context += f"Use the pronoun '{pronoun}' when referring to the candidate.\n"
+        personalization_context += f"Use '{pronoun}' pronouns. "
     if career_level:
-        personalization_context += f"Career Level: {career_level}\n"
+        personalization_context += f"Level: {career_level}. "
     if industry:
-        personalization_context += f"Industry: {industry}\n"
+        personalization_context += f"Industry: {industry}. "
     if persona:
-        personalization_context += f"Interview Persona: {persona}\n"
+        personalization_context += f"Persona: {persona}."
     
-    # Prepare domain data for the prompt
+    # Prepare simplified domain data - only essential info to reduce token usage
     domain_data_list = []
     for domain_name, domain_data in hierarchical_results.items():
         if isinstance(domain_data, dict):
-            domain_info = {
-                "domain_name": domain_name,
-                "average_score": domain_data.get("average_score", domain_scores.get(domain_name, 0.0)),
-                "covered": domain_data.get("covered", False),
-                "subdomains": {}
-            }
+            domain_score = domain_data.get("average_score", domain_scores.get(domain_name, 0.0))
             
-            # Extract subdomain information
+            # Only include top subdomains (max 3 per domain) to reduce data size
             subdomains = domain_data.get("subdomains", {})
+            subdomain_list = []
             for subdomain_name, subdomain_data in subdomains.items():
                 if isinstance(subdomain_data, dict):
-                    subdomain_info = {
-                        "subdomain_name": subdomain_name,
-                        "average_score": subdomain_data.get("average_score", 0.0),
-                        "covered": subdomain_data.get("covered", False),
-                        "skills": {}
-                    }
-                    
-                    # Extract skill information
-                    skills = subdomain_data.get("skills", {})
-                    for skill_name, skill_data in skills.items():
-                        if isinstance(skill_data, dict):
-                            subdomain_info["skills"][skill_name] = {
-                                "score": skill_data.get("score", 0.0),
-                                "covered": skill_data.get("covered", False),
-                                "level": skill_data.get("level", "Medium")
-                            }
-                    
-                    domain_info["subdomains"][subdomain_name] = subdomain_info
+                    subdomain_list.append({
+                        "name": subdomain_name,
+                        "score": round(subdomain_data.get("average_score", 0.0), 1)
+                    })
             
+            # Sort by score and take top 3
+            subdomain_list.sort(key=lambda x: x["score"], reverse=True)
+            top_subdomains = subdomain_list[:3]
+            
+            domain_info = {
+                "domain": domain_name,
+                "score": round(domain_score, 1),
+                "subdomains": top_subdomains
+            }
             domain_data_list.append(domain_info)
     
-    # Build the prompt
-    domain_summary_prompt = f"""You are an expert interview analyst. Analyze all the domains covered in this interview and create a comprehensive summary.
+    # Simplify conversation summary - only extract key points if it's too large
+    conversation_text = ""
+    if conversation_summary:
+        if isinstance(conversation_summary, dict):
+            # Extract only key fields, limit text length
+            key_points = []
+            for key in ["overall_assessment", "key_strengths", "communication_style"]:
+                if key in conversation_summary:
+                    value = conversation_summary[key]
+                    if isinstance(value, str):
+                        # Truncate long text
+                        if len(value) > 500:
+                            value = value[:500] + "..."
+                        key_points.append(f"{key}: {value}")
+            conversation_text = " | ".join(key_points) if key_points else "Available"
+        else:
+            # If it's a string, truncate it
+            conv_str = str(conversation_summary)
+            conversation_text = conv_str[:500] + "..." if len(conv_str) > 500 else conv_str
+    
+    # Build concise prompt
+    domain_summary_prompt = f"""Analyze interview domains and create a summary.
 
-{personalization_context}
+Context: {personalization_context}
 
-Domain Data: {json.dumps(domain_data_list, indent=2, default=str)}
+Domains (score 0-10): {json.dumps(domain_data_list, separators=(',', ':'))}
 
-Conversation Summary (if available): {json.dumps(conversation_summary, indent=2, default=str) if conversation_summary else "Not available"}
+Key conversation points: {conversation_text if conversation_text else "Not available"}
 
-Your task is to create a detailed summary that:
-1. Provides an overview of all domains covered in the interview
-2. Highlights the candidate's strengths in each domain
-3. Identifies areas for improvement in each domain
-4. Provides specific insights about their performance across different domains
-5. Compares performance across domains to identify patterns
-6. Gives actionable recommendations for each domain
-7. Makes it personal and meaningful, addressing {name if name else 'the candidate'} directly
-8. Uses {pronoun if pronoun else 'their'} pronouns appropriately
-
-Return a JSON object with the following structure:
+Create a JSON summary with:
 {{
-    "overall_domain_analysis": "A comprehensive overview of how the candidate performed across all domains",
+    "overall_domain_analysis": "Brief overview of performance across domains",
     "domains": [
         {{
             "domain_name": "Domain Name",
             "average_score": 7.5,
-            "strengths": ["List of strengths in this domain"],
-            "areas_for_improvement": ["List of areas that need work"],
-            "key_insights": "Detailed insights about performance in this domain",
-            "recommendations": ["Specific actionable recommendations"],
+            "strengths": ["strength1", "strength2"],
+            "areas_for_improvement": ["area1", "area2"],
+            "key_insights": "Brief insights",
+            "recommendations": ["rec1", "rec2"],
             "subdomain_breakdown": [
-                {{
-                    "subdomain_name": "Subdomain Name",
-                    "average_score": 8.0,
-                    "key_findings": "Insights about this subdomain"
-                }}
+                {{"subdomain_name": "Subdomain", "average_score": 8.0, "key_findings": "Brief findings"}}
             ]
         }}
     ],
-    "cross_domain_patterns": "Analysis of patterns across different domains",
-    "top_performing_domains": ["List of top 2-3 domains"],
-    "domains_needing_attention": ["List of domains that need improvement"],
-    "overall_recommendations": "High-level recommendations based on all domains"
+    "cross_domain_patterns": "Brief pattern analysis",
+    "top_performing_domains": ["domain1", "domain2"],
+    "domains_needing_attention": ["domain1"],
+    "overall_recommendations": "Brief recommendations"
 }}
 
-Return ONLY valid JSON, no other text."""
+Return ONLY valid JSON."""
 
     try:
+        # Use max_tokens to limit response size and improve speed
         response = evaluation_llm.invoke(domain_summary_prompt)
         response_text = response.content.strip()
         
@@ -216,5 +231,71 @@ Return ONLY valid JSON, no other text."""
             "domains_needing_attention": [],
             "overall_recommendations": ""
         }
+
+
+def _normalize_domain_name(name: str) -> str:
+    """Normalize domain name for comparison (case-insensitive, strip whitespace)"""
+    return name.strip().lower()
+
+
+def _find_domain_index(domains: List[Dict[str, Any]], domain_name: str) -> int:
+    """Find index of domain by normalized name, returns -1 if not found"""
+    normalized_target = _normalize_domain_name(domain_name)
+    for i, domain in enumerate(domains):
+        if _normalize_domain_name(domain.get("domain_name", "")) == normalized_target:
+            return i
+    return -1
+
+
+def organize_domains_by_cog(domain_summary: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Organize domains in the summary by COG relationships.
+    Groups related domains together based on persona trait pairs.
+    """
+    if "domains" not in domain_summary or not isinstance(domain_summary["domains"], list):
+        return domain_summary
+    
+    domains = domain_summary["domains"].copy()
+    if not domains:
+        return domain_summary
+    
+    # Define COG relationships as pairs (from PERSONA_DEFINITIONS)
+    cog_pairs = [
+        ("Empathy", "Relationships"),
+        ("Confidence", "Leadership"),
+        ("Security", "Stability"),
+        ("Adaptability", "Creativity"),
+        ("Communication", "Expression"),
+        ("Strategic Thinking", "Insight"),
+        ("Alignment", "Purpose"),
+    ]
+    
+    # Track which domains have been placed
+    placed_indices = set()
+    organized_domains = []
+    
+    # Process each COG pair
+    for domain1_name, domain2_name in cog_pairs:
+        idx1 = _find_domain_index(domains, domain1_name)
+        idx2 = _find_domain_index(domains, domain2_name)
+        
+        # Add first domain if found and not already placed
+        if idx1 != -1 and idx1 not in placed_indices:
+            organized_domains.append(domains[idx1])
+            placed_indices.add(idx1)
+        
+        # Add second domain if found and not already placed
+        if idx2 != -1 and idx2 not in placed_indices:
+            organized_domains.append(domains[idx2])
+            placed_indices.add(idx2)
+    
+    # Add remaining domains that weren't part of any COG pair
+    for i, domain in enumerate(domains):
+        if i not in placed_indices:
+            organized_domains.append(domain)
+    
+    # Update the domain summary with organized domains
+    domain_summary["domains"] = organized_domains
+    return domain_summary
 
 

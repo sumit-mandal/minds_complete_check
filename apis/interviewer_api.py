@@ -9,7 +9,7 @@ from utils.database import InterviewDatabase
 from utils.state_manager import Persona, CandidatePersona
 from utils.trait_analyzer import generate_persona_report
 from utils.state_for_websocket import reconstruct_interview_state
-from utils.graph_3_llm_helper import generate_domain_summary
+from utils.graph_3_llm_helper import generate_domain_summary, organize_domains_by_cog
 
 
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
@@ -278,6 +278,8 @@ async def get_domains_summary(session_id: str):
         # Check if domain summary already exists in database
         cached_summary = database.get_domain_summary(session_id)
         if cached_summary:
+            # Organize domains by COG relationships even for cached summaries
+            cached_summary = organize_domains_by_cog(cached_summary)
             return DomainSummaryResponse(
                 session_id=session_id,
                 domain_summary=cached_summary,
@@ -338,6 +340,9 @@ async def get_domains_summary(session_id: str):
             industry=industry,
             persona=persona
         )
+        
+        # Organize domains by COG relationships
+        domain_summary = organize_domains_by_cog(domain_summary)
         
         # Save to database
         database.save_domain_summary(session_id, domain_summary)
