@@ -31,38 +31,66 @@ evaluation_llm = ChatGoogleGenerativeAI(
 def evaluate_response_with_llm(user_response: str, all_skills: list) -> dict:
     """Evaluate response using LLM without structured output to avoid parsing issues"""
     
-    evaluation_prompt = f"""You are a strict expert evaluator. Analyze the user's response and ONLY assign scores to skills that are CLEARLY and CONCRETELY demonstrated with specific evidence.
+    # Categorize skills into core and applied based on practical_applications
+    core_skills = []
+    applied_skills = []
+    
+    for skill in all_skills:
+        # If skill has practical_applications, it's an applied skill
+        # Otherwise, it's a core skill (understanding/self-awareness)
+        if skill.get("practical_applications") and len(skill.get("practical_applications", [])) > 0:
+            applied_skills.append(skill)
+        else:
+            core_skills.append(skill)
+    
+    # Build skill categorization info for the prompt
+    skill_categories = {
+        "core_skills": [{"name": s["name"], "knowledge_areas": s.get("knowledge_areas", [])} for s in core_skills],
+        "applied_skills": [{"name": s["name"], "practical_applications": s.get("practical_applications", [])} for s in applied_skills]
+    }
+    
+    evaluation_prompt = f"""You are a strict expert evaluator. Analyze the user's response and ONLY assign scores to skills that are CLEARLY demonstrated with appropriate evidence based on skill type.
 
-Available skills to evaluate: {json.dumps(all_skills, indent=2)}
 User response: {user_response}
 
-CRITICAL EVALUATION RULES:
-1. VAGUE/GENERIC RESPONSES: If the response is vague, generic, or lacks specific examples, assign scores of 0-3 ONLY. Generic statements like "working with people" or "solving problems together" are NOT sufficient evidence.
+SKILL CATEGORIZATION:
+Core Skills (understanding/self-awareness): {json.dumps(skill_categories["core_skills"], separators=(',', ':'))}
+Applied Skills (real-world application): {json.dumps(skill_categories["applied_skills"], separators=(',', ':'))}
 
-2. SCORING SCALE (0-10):
+CRITICAL EVALUATION RULES BY SKILL TYPE:
+
+1. CORE SKILLS (Understanding & Self-Awareness):
+   - Evaluate: Understanding of the skill definition and self-awareness/confidence of the skill within themselves
+   - Evidence Required: Must demonstrate understanding of what the skill means AND awareness of how it applies to themselves
+   - Examples of valid evidence: "I understand that [skill] means...", "I recognize that I have/need [skill] because...", clear self-reflection about the skill
+   - Generic statements like "I work with teams" do NOT demonstrate core skill understanding
+   - Scoring: 0-3 if no understanding/awareness shown, 4-7 if basic understanding, 8-10 if clear self-awareness
+
+2. APPLIED SKILLS (Real-World Application):
+   - Evaluate: Understanding of how they would or have applied the skill in real-world situations with examples and impact
+   - Evidence Required: MUST have SPECIFIC examples, concrete actions, or detailed descriptions of application
+   - Examples of valid evidence: Specific situations, concrete actions taken, outcomes/impact described
+   - Generic statements (e.g., "I work with teams", "I solve problems") do NOT demonstrate applied skills
+   - Scoring: 0-3 if no examples, 4-7 if basic example provided, 8-10 if detailed example with impact
+
+3. SKILL SELECTION RULES:
+   - ONLY score "applied" skills that are EXPLICITLY demonstrated with concrete evidence (specific examples)
+   - Do NOT score core and applied skills based on assumptions or vague connections
+   - Be conservative: when in doubt, do NOT score the skill
+   - If a response is too vague to evaluate most skills, only score 1-3 skills at most
+
+4. RESPONSE QUALITY ASSESSMENT:
+   - Short, vague responses (< 20 words) should typically score 0-3 for most skills
+   - Responses without specific examples (for applied skills) or self-awareness (for core skills) should score 0-3
+   - Generic statements about teamwork, problem-solving, etc. should score 0-3
+
+5. SCORING SCALE (0-10):
    - 0-2: No demonstration or only vague/generic mention with no evidence
-   - 2-3: Weak or tangential mention, no concrete examples
-   - 3-5: Basic demonstration with minimal evidence or a single vague example
-   - 5-7: Clear demonstration with specific examples or concrete evidence
+   - 2-3: Weak or tangential mention, no concrete examples/awareness
+   - 3-5: Basic demonstration with minimal evidence
+   - 5-7: Clear demonstration with specific examples (applied) or self-awareness (core)
    - 7-9: Strong demonstration with detailed examples and clear evidence
    - 9-10: Excellent demonstration with multiple specific examples and strong evidence
-
-3. EVIDENCE REQUIREMENTS:
-   - A skill must be demonstrated through SPECIFIC examples, concrete actions, or detailed descriptions
-   - Generic statements (e.g., "I work with teams", "I solve problems") do NOT demonstrate skills
-   - Brief, vague responses should receive scores of 0-3, not 5-6
-   - Only score skills where you can identify CLEAR, CONCRETE evidence in the response
-
-4. SKILL SELECTION:
-   - ONLY score skills that are EXPLICITLY demonstrated with concrete evidence
-   - Do NOT score skills based on assumptions or vague connections
-   - If a response is too vague to evaluate most skills, only score 1-3 skills at most
-   - Be conservative: when in doubt, do NOT score the skill
-
-5. RESPONSE QUALITY ASSESSMENT:
-   - Short, vague responses (< 20 words) should typically score 0-3 for most skills
-   - Responses without specific examples should score 0-3
-   - Generic statements about teamwork, problem-solving, etc. should score 0-3
 
 6. DECIMAL SCORING:
    - Use decimal scores (e.g., 1.8, 2.1, 3.4, 7.3, 8.5) NOT whole numbers

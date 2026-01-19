@@ -1,6 +1,6 @@
 import os
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional, Union
 
 import sqlalchemy as sa
@@ -231,7 +231,7 @@ class InterviewDatabase:
             session_obj = (
                 db.query(InterviewSession).filter_by(session_id=self._to_uuid(session_id)).one()
             )
-            session_obj.end_time = datetime.utcnow()
+            session_obj.end_time = datetime.now(timezone.utc)
             session_obj.progress_percentage = final_results.get("interview_progress")
             session_obj.covered_skills = final_results.get("covered_skills")
             session_obj.total_skills = final_results.get("total_skills")
@@ -266,12 +266,20 @@ class InterviewDatabase:
             if not session_obj:
                 return None
 
+            # Calculate session duration
+            duration_seconds = None
+            if session_obj.start_time:
+                end_time = session_obj.end_time if session_obj.end_time else datetime.now(timezone.utc)
+                if end_time:
+                    duration_seconds = int((end_time - session_obj.start_time).total_seconds())
+            
             data = {
                 "session": {
                     "session_id": session_obj.session_id,
                     "user_id": str(session_obj.user_id),
                     "start_time": session_obj.start_time,
                     "end_time": session_obj.end_time,
+                    "duration_seconds": duration_seconds,
                     "max_questions": session_obj.max_questions,
                     "total_questions": session_obj.total_questions,
                     "progress_percentage": session_obj.progress_percentage,
@@ -394,13 +402,21 @@ class InterviewDatabase:
             return "No Sessions Found for User"
 
         all_interviews = [] 
-        for session_obj in sessions: 
+        for session_obj in sessions:
+            # Calculate session duration
+            duration_seconds = None
+            if session_obj.start_time:
+                end_time = session_obj.end_time if session_obj.end_time else datetime.now(timezone.utc)
+                if end_time:
+                    duration_seconds = int((end_time - session_obj.start_time).total_seconds())
+            
             session_data = {
                 "session": {
                     "session_id": str(session_obj.session_id),
                     "user_id": str(session_obj.user_id),
                     "start_time": session_obj.start_time.isoformat() if session_obj.start_time else None,
                     "end_time": session_obj.end_time.isoformat() if session_obj.end_time else None,
+                    "duration_seconds": duration_seconds,
                     "max_questions": session_obj.max_questions,
                     "total_questions": session_obj.total_questions,
                     "progress_percentage": session_obj.progress_percentage,
@@ -665,6 +681,30 @@ Return JSON only."""
             if final_result and final_result.summary:
                 return final_result.summary.get("domain_summary")
             return None
+
+    def get_session_time_info(self, session_id: str) -> Dict[str, Any]:
+        """Get session time information (start_time, end_time, duration_seconds)"""
+        with get_db_session() as db:
+            session_obj = (
+                db.query(InterviewSession)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .first()
+            )
+            if not session_obj:
+                return None
+            
+            # Calculate session duration
+            duration_seconds = None
+            if session_obj.start_time:
+                end_time = session_obj.end_time if session_obj.end_time else datetime.now(timezone.utc)
+                if end_time:
+                    duration_seconds = int((end_time - session_obj.start_time).total_seconds())
+            
+            return {
+                "start_time": session_obj.start_time.isoformat() if session_obj.start_time else None,
+                "end_time": session_obj.end_time.isoformat() if session_obj.end_time else None,
+                "duration_seconds": duration_seconds,
+            }
 
     def get_previous_questions(self, session_id: str, limit: int = 10) -> List[str]:
         """Get previously asked questions for a session"""

@@ -9,7 +9,7 @@ from utils.database import InterviewDatabase
 from utils.state_manager import Persona, CandidatePersona
 from utils.trait_analyzer import generate_persona_report
 from utils.state_for_websocket import reconstruct_interview_state
-from utils.graph_3_llm_helper import generate_domain_summary, organize_domains_by_cog
+from utils.graph_3_llm_helper import generate_domain_summary
 
 
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
@@ -42,6 +42,8 @@ class StartInterviewResponse(BaseModel):
     industry: Optional[str] = None
     name: Optional[str] = None
     pronoun: Optional[str] = None
+    start_time: Optional[str] = None
+    duration_seconds: Optional[int] = None
 
 class SubmitResponseRequest(BaseModel):
     user_response: str
@@ -59,6 +61,9 @@ class SubmitResponseResponse(BaseModel):
     question_number: Optional[int] = None
     max_questions: Optional[int] = None
     completion_reason: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    duration_seconds: Optional[int] = None
 
 class ProgressResponse(BaseModel):
     progress: Dict[str, Any]
@@ -94,6 +99,9 @@ async def start_interview(request: StartInterviewRequest):
     
     result = interviewer.start_interview(session_id, request.user_id, persona, candidate_persona, interview_domains, max_questions, name=request.name, pronoun=request.pronoun, career_level=request.career_level, industry=request.industry)
     
+    # Get session time info
+    time_info = database.get_session_time_info(session_id)
+    
     return StartInterviewResponse(
         session_id=result["session_id"],
         current_question=result["current_question"],
@@ -105,6 +113,8 @@ async def start_interview(request: StartInterviewRequest):
         industry=request.industry,
         name=request.name,
         pronoun=request.pronoun,
+        start_time=time_info.get("start_time") if time_info else None,
+        duration_seconds=time_info.get("duration_seconds") if time_info else None,
     )
 
 @router.post("/submit", response_model=SubmitResponseResponse)
@@ -116,12 +126,18 @@ async def submit_response(request: SubmitResponseRequest):
     
     result = interviewer.submit_response(request.user_response, request.session_id)
     
+    # Get session time info
+    time_info = database.get_session_time_info(request.session_id)
+    
     if result["interview_complete"]:
         return SubmitResponseResponse(
             interview_complete=True,
             summary=result["summary"],
             final_results=result["final_results"],
-            completion_reason=result.get("completion_reason")
+            completion_reason=result.get("completion_reason"),
+            start_time=time_info.get("start_time") if time_info else None,
+            end_time=time_info.get("end_time") if time_info else None,
+            duration_seconds=time_info.get("duration_seconds") if time_info else None,
         )
     else:
         return SubmitResponseResponse(
@@ -132,7 +148,10 @@ async def submit_response(request: SubmitResponseRequest):
             progress=result["progress"],
             last_evaluation=result["last_evaluation"],
             question_number=result.get("question_number"),
-            max_questions=result.get("max_questions")
+            max_questions=result.get("max_questions"),
+            start_time=time_info.get("start_time") if time_info else None,
+            end_time=time_info.get("end_time") if time_info else None,
+            duration_seconds=time_info.get("duration_seconds") if time_info else None,
         )
 
 
@@ -278,8 +297,6 @@ async def get_domains_summary(session_id: str):
         # Check if domain summary already exists in database
         cached_summary = database.get_domain_summary(session_id)
         if cached_summary:
-            # Organize domains by COG relationships even for cached summaries
-            cached_summary = organize_domains_by_cog(cached_summary)
             return DomainSummaryResponse(
                 session_id=session_id,
                 domain_summary=cached_summary,
@@ -340,9 +357,6 @@ async def get_domains_summary(session_id: str):
             industry=industry,
             persona=persona
         )
-        
-        # Organize domains by COG relationships
-        domain_summary = organize_domains_by_cog(domain_summary)
         
         # Save to database
         database.save_domain_summary(session_id, domain_summary)
