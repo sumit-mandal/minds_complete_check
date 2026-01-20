@@ -683,26 +683,32 @@ Return JSON only."""
             return None
 
     def get_session_time_info(self, session_id: str) -> Dict[str, Any]:
-        """Get session time information (start_time, end_time, duration_seconds)"""
+        """Get session time information (start_time, end_time, duration_seconds) - optimized query"""
         with get_db_session() as db:
-            session_obj = (
-                db.query(InterviewSession)
+            # Only query the time columns we need for better performance
+            result = (
+                db.query(
+                    InterviewSession.start_time,
+                    InterviewSession.end_time
+                )
                 .filter_by(session_id=self._to_uuid(session_id))
                 .first()
             )
-            if not session_obj:
+            if not result:
                 return None
+            
+            start_time, end_time = result
             
             # Calculate session duration
             duration_seconds = None
-            if session_obj.start_time:
-                end_time = session_obj.end_time if session_obj.end_time else datetime.now(timezone.utc)
-                if end_time:
-                    duration_seconds = int((end_time - session_obj.start_time).total_seconds())
+            if start_time:
+                end_time_val = end_time if end_time else datetime.now(timezone.utc)
+                if end_time_val:
+                    duration_seconds = int((end_time_val - start_time).total_seconds())
             
             return {
-                "start_time": session_obj.start_time.isoformat() if session_obj.start_time else None,
-                "end_time": session_obj.end_time.isoformat() if session_obj.end_time else None,
+                "start_time": start_time.isoformat() if start_time else None,
+                "end_time": end_time.isoformat() if end_time else None,
                 "duration_seconds": duration_seconds,
             }
 

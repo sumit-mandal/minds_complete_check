@@ -27,21 +27,44 @@ evaluation_llm = ChatGoogleGenerativeAI(
     google_api_key=api_key
 )
 
+# Domain-based categorization for core vs applied skills
+APPLIED_DOMAINS = {"Alignment", "Strategic Thinking", "Communication", "Leadership", "Relationship", "Relationships", "Stability", "Adaptability"}
+CORE_DOMAINS = {"Purpose", "Insights", "Insight", "Expression", "Confidence", "Creativity", "Security"}
+
+def _normalize_domain_for_categorization(domain_name: str) -> str:
+    """Normalize domain name for categorization comparison"""
+    return domain_name.strip().lower()
+
+def _is_applied_domain(domain_name: str) -> bool:
+    """Check if a domain is an applied domain"""
+    normalized = _normalize_domain_for_categorization(domain_name)
+    return any(_normalize_domain_for_categorization(applied) == normalized for applied in APPLIED_DOMAINS)
+
+def _is_core_domain(domain_name: str) -> bool:
+    """Check if a domain is a core domain"""
+    normalized = _normalize_domain_for_categorization(domain_name)
+    return any(_normalize_domain_for_categorization(core) == normalized for core in CORE_DOMAINS)
+
 # Custom evaluation function that doesn't use structured output
 def evaluate_response_with_llm(user_response: str, all_skills: list) -> dict:
     """Evaluate response using LLM without structured output to avoid parsing issues"""
     
-    # Categorize skills into core and applied based on practical_applications
+    # Categorize skills into core and applied based on domain name
     core_skills = []
     applied_skills = []
     
     for skill in all_skills:
-        # If skill has practical_applications, it's an applied skill
-        # Otherwise, it's a core skill (understanding/self-awareness)
-        if skill.get("practical_applications") and len(skill.get("practical_applications", [])) > 0:
+        domain_name = skill.get("domain", "")
+        if _is_applied_domain(domain_name):
             applied_skills.append(skill)
-        else:
+        elif _is_core_domain(domain_name):
             core_skills.append(skill)
+        else:
+            # Fallback: if domain not recognized, use practical_applications as before
+            if skill.get("practical_applications") and len(skill.get("practical_applications", [])) > 0:
+                applied_skills.append(skill)
+            else:
+                core_skills.append(skill)
     
     # Build skill categorization info for the prompt
     skill_categories = {
@@ -49,54 +72,59 @@ def evaluate_response_with_llm(user_response: str, all_skills: list) -> dict:
         "applied_skills": [{"name": s["name"], "practical_applications": s.get("practical_applications", [])} for s in applied_skills]
     }
     
-    evaluation_prompt = f"""You are a strict expert evaluator. Analyze the user's response and ONLY assign scores to skills that are CLEARLY demonstrated with appropriate evidence based on skill type.
+    evaluation_prompt = f"""You are a balanced and fair evaluator. Analyze the user's response and assign scores to skills that are demonstrated with reasonable evidence. Be encouraging but maintain evaluation integrity - recognize genuine demonstrations while ensuring the interview provides meaningful assessment.
 
 User response: {user_response}
 
 SKILL CATEGORIZATION:
-Core Skills (understanding/self-awareness): {json.dumps(skill_categories["core_skills"], separators=(',', ':'))}
-Applied Skills (real-world application): {json.dumps(skill_categories["applied_skills"], separators=(',', ':'))}
+Core Skills: {json.dumps(skill_categories["core_skills"], separators=(',', ':'))}
+Applied Skills: {json.dumps(skill_categories["applied_skills"], separators=(',', ':'))}
 
-CRITICAL EVALUATION RULES BY SKILL TYPE:
+DEFINITIONS:
 
-1. CORE SKILLS (Understanding & Self-Awareness):
-   - Evaluate: Understanding of the skill definition and self-awareness/confidence of the skill within themselves
-   - Evidence Required: Must demonstrate understanding of what the skill means AND awareness of how it applies to themselves
-   - Examples of valid evidence: "I understand that [skill] means...", "I recognize that I have/need [skill] because...", clear self-reflection about the skill
-   - Generic statements like "I work with teams" do NOT demonstrate core skill understanding
-   - Scoring: 0-3 if no understanding/awareness shown, 4-7 if basic understanding, 8-10 if clear self-awareness
+1. CORE SKILLS - A foundational talent/gift that exists within all individuals that may or may not be visible to others. The strength of the foundational core skill varies by individual based on their level of awareness and subsequent development of the talent, as they may or may not be aware that this innate talent exists within themselves.
+   - Evaluate: Look for signs of awareness, understanding, or recognition of the foundational talent
+   - Evidence can be: Direct statements, implied understanding, indirect references, contextual clues, or responses suggesting familiarity with the concept
+   - Scoring approach: Recognize genuine awareness or understanding, even if not fully developed
 
-2. APPLIED SKILLS (Real-World Application):
-   - Evaluate: Understanding of how they would or have applied the skill in real-world situations with examples and impact
-   - Evidence Required: MUST have SPECIFIC examples, concrete actions, or detailed descriptions of application
-   - Examples of valid evidence: Specific situations, concrete actions taken, outcomes/impact described
-   - Generic statements (e.g., "I work with teams", "I solve problems") do NOT demonstrate applied skills
-   - Scoring: 0-3 if no examples, 4-7 if basic example provided, 8-10 if detailed example with impact
+2. APPLIED SKILLS - This is how the skill is applied or "shows up" in real work through interactions, situations, the environment, and/or opportunity.
+   - Evaluate: Look for how the skill manifests in real-world contexts
+   - Evidence can be: Specific examples, general scenarios, implied applications, descriptions suggesting practical experience, or contextual indicators
+   - Scoring approach: Recognize real-world manifestations, even if not exhaustively detailed
 
-3. SKILL SELECTION RULES:
-   - ONLY score "applied" skills that are EXPLICITLY demonstrated with concrete evidence (specific examples)
-   - Do NOT score core and applied skills based on assumptions or vague connections
-   - Be conservative: when in doubt, do NOT score the skill
-   - If a response is too vague to evaluate most skills, only score 1-3 skills at most
+EVALUATION GUIDELINES:
 
-4. RESPONSE QUALITY ASSESSMENT:
-   - Short, vague responses (< 20 words) should typically score 0-3 for most skills
-   - Responses without specific examples (for applied skills) or self-awareness (for core skills) should score 0-3
-   - Generic statements about teamwork, problem-solving, etc. should score 0-3
+1. BALANCED EVALUATION:
+   - Look for reasonable connections between the response and the skills
+   - Recognize partial demonstrations and implied understanding when there's genuine evidence
+   - Give credit for intent and underlying understanding, but ensure there's actual evidence
+   - Be encouraging but maintain evaluation standards - don't inflate scores unnecessarily
 
-5. SCORING SCALE (0-10):
-   - 0-2: No demonstration or only vague/generic mention with no evidence
-   - 2-3: Weak or tangential mention, no concrete examples/awareness
-   - 3-5: Basic demonstration with minimal evidence
-   - 5-7: Clear demonstration with specific examples (applied) or self-awareness (core)
-   - 7-9: Strong demonstration with detailed examples and clear evidence
-   - 9-10: Excellent demonstration with multiple specific examples and strong evidence
+2. SKILL SELECTION:
+   - Score skills that are demonstrated with reasonable evidence (explicit or implicit)
+   - Look for indirect indicators and contextual clues that suggest genuine demonstration
+   - When there's reasonable evidence, score the skill appropriately
+   - Don't score skills based on very weak or purely speculative connections
 
-6. DECIMAL SCORING:
+3. RESPONSE QUALITY ASSESSMENT:
+   - Short responses can demonstrate skills if they contain relevant and meaningful information
+   - Responses without explicit examples can still score if they show genuine understanding or implied experience
+   - Generic statements can demonstrate skills if they're contextually relevant and show understanding
+   - Look for genuine intent and underlying understanding, not just surface-level mentions
+
+4. SCORING SCALE (0-10) - Balanced ranges:
+   - 0-2: No demonstration or completely irrelevant
+   - 2-3: Very minimal or tangential demonstration, weak connection
+   - 3-5: Basic demonstration with some evidence (explicit or implicit)
+   - 5-7: Clear demonstration with reasonable evidence or examples
+   - 7-8: Strong demonstration with good evidence
+   - 8-10: Excellent demonstration with multiple examples or very strong evidence
+
+5. DECIMAL SCORING:
    - Use decimal scores (e.g., 1.8, 2.1, 3.4, 7.3, 8.5) NOT whole numbers
    - Avoid scores like 5.0, 6.0 - use 4.8, 5.2, 6.3 instead
 
-IMPORTANT: For vague responses like "working with interesting people as we solve those roles together as a team", this is a generic statement with no concrete evidence. Most skills should receive scores of 0-3, and only 1-3 skills at most should be scored if there's any minimal evidence.
+IMPORTANT: Be balanced in your evaluation. Recognize genuine strengths and demonstrations while maintaining evaluation integrity. Look for reasonable connections between the response and the skills. Give credit for partial demonstrations and implied understanding when there's actual evidence, but don't inflate scores unnecessarily. The goal is to provide meaningful assessment that encourages growth while maintaining standards.
 
 Return ONLY a JSON object with skill names as keys and numeric scores as values. Do not include any other text, just the JSON object."""
 

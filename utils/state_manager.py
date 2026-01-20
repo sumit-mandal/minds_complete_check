@@ -173,9 +173,9 @@ class StateManager:
             for subdomain in domain.subdomains:
                 for skill in subdomain.core_skills:
                     # Skills that need direct questions:
-                    # 1. Never asked about in questions (highest priority)
+                    # 1. Never asked about in questions (includes uncovered skills and covered but not asked)
                     # 2. Uncovered skills
-                    # 3. Low scores (below 5.0) but only if not already asked about
+                    # Note: Priority calculation handles giving extra priority to covered-but-not-asked skills with score < 5.0
                     needs_question = (
                         not skill.asked_in_question or 
                         not skill.covered
@@ -206,6 +206,10 @@ class StateManager:
         # Highest priority: never asked about in questions
         if not skill.asked_in_question:
             priority += 1000.0  # Much higher priority to ensure these are asked first
+        
+        # Very high priority: covered but not asked AND score < 5.0 (indirect evaluation with low score)
+        if skill.covered and not skill.asked_in_question and skill.score < 5.0:
+            priority += 500.0  # High priority to re-ask skills evaluated indirectly with low scores
         
         # High priority: low scores
         if skill.score < 3.0:

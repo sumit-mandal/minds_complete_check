@@ -516,6 +516,7 @@ def evaluate_response_targeted(user_response: str, state_manager: StateManager, 
                 if skill.name in target_skills:
                     targeted_skills.append({
                         "name": skill.name,
+                        "domain": domain.name,
                         "knowledge_areas": skill.knowledge_areas,
                         "practical_applications": skill.practical_applications,
                         "level": skill.level
@@ -527,14 +528,8 @@ def evaluate_response_targeted(user_response: str, state_manager: StateManager, 
         evaluation = evaluate_response_with_llm(user_response, targeted_skills)
         return evaluation
     except Exception as e:
-        # Fallback evaluation if LLM fails
         print(f"Warning: LLM evaluation failed: {e}")
-        fallback_skills = ["Clarity of Thought", "Problem-Solving Confidence"]
-        return {
-            "skill_scores": {skill: 5.0 for skill in target_skills if skill in fallback_skills},
-            "confidence_level": 0.5,
-            "reasoning": "Fallback evaluation due to LLM failure"
-        }
+        raise e
 
 def evaluate_response_comprehensive(user_response: str, state_manager: StateManager) -> Dict[str, Any]:
     """Evaluate a user response for ALL skills it might cover"""
@@ -546,6 +541,7 @@ def evaluate_response_comprehensive(user_response: str, state_manager: StateMana
             for skill in subdomain.core_skills:
                 all_skills.append({
                     "name": skill.name,
+                    "domain": domain.name,
                     "knowledge_areas": skill.knowledge_areas,
                     "practical_applications": skill.practical_applications,
                     "level": skill.level
@@ -557,16 +553,8 @@ def evaluate_response_comprehensive(user_response: str, state_manager: StateMana
         evaluation = evaluate_response_with_llm(user_response, all_skills)
         return evaluation
     except Exception as e:
-        # Fallback evaluation if LLM fails
         print(f"Warning: LLM evaluation failed: {e}")
-        fallback_skills = ["Clarity of Thought", "Problem-Solving Confidence"]
-        return {
-            "skill_scores": {skill: 5.0 for skill in fallback_skills},
-            "confidence_level": 0.5,
-            "reasoning": "Fallback evaluation due to LLM error",
-            "follow_up_needed": False,
-            "skills_covered": fallback_skills
-        }
+        raise e
 
 def update_state_manager(state_manager: StateManager, user_response: str, evaluation: Dict[str, Any]):
     """Update the state manager with the response and evaluation"""

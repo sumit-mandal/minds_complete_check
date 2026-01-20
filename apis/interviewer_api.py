@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException,WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from utils.langgraph_interviewer import LangGraphInterviewer
 from utils.database import InterviewDatabase
@@ -99,8 +99,8 @@ async def start_interview(request: StartInterviewRequest):
     
     result = interviewer.start_interview(session_id, request.user_id, persona, candidate_persona, interview_domains, max_questions, name=request.name, pronoun=request.pronoun, career_level=request.career_level, industry=request.industry)
     
-    # Get session time info
-    time_info = database.get_session_time_info(session_id)
+    # Calculate time info directly without DB query (session was just created)
+    start_time_iso = datetime.now(timezone.utc).isoformat()
     
     return StartInterviewResponse(
         session_id=result["session_id"],
@@ -113,8 +113,8 @@ async def start_interview(request: StartInterviewRequest):
         industry=request.industry,
         name=request.name,
         pronoun=request.pronoun,
-        start_time=time_info.get("start_time") if time_info else None,
-        duration_seconds=time_info.get("duration_seconds") if time_info else None,
+        start_time=start_time_iso,
+        duration_seconds=0,  # Just started, duration is 0
     )
 
 @router.post("/submit", response_model=SubmitResponseResponse)
