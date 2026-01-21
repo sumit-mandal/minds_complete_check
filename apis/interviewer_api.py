@@ -295,13 +295,13 @@ async def get_domains_summary(session_id: str):
             raise HTTPException(status_code=404, detail="Session not found")
         
         # Check if domain summary already exists in database
-        cached_summary = database.get_domain_summary(session_id)
-        if cached_summary:
-            return DomainSummaryResponse(
-                session_id=session_id,
-                domain_summary=cached_summary,
-                cached=True
-            )
+        # cached_summary = database.get_domain_summary(session_id)
+        # if cached_summary:
+        #     return DomainSummaryResponse(
+        #         session_id=session_id,
+        #         domain_summary=cached_summary,
+        #         cached=True
+        #     )
         
         # Get final results
         final_results = session_data.get("final_results", {})

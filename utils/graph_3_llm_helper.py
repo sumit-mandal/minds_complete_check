@@ -177,23 +177,34 @@ def generate_domain_summary(hierarchical_results: Dict[str, Any], domain_scores:
     if persona:
         personalization_context += f"Persona: {persona}."
     
-    # Prepare simplified domain data - only essential info to reduce token usage
+    # Prepare domain data with skill details
     domain_data_list = []
     for domain_name, domain_data in hierarchical_results.items():
         if isinstance(domain_data, dict):
             domain_score = domain_data.get("average_score", domain_scores.get(domain_name, 0.0))
             
-            # Only include top subdomains (max 3 per domain) to reduce data size
             subdomains = domain_data.get("subdomains", {})
             subdomain_list = []
             for subdomain_name, subdomain_data in subdomains.items():
                 if isinstance(subdomain_data, dict):
+                    skills_data = []
+                    skills = subdomain_data.get("skills", {})
+                    for skill_name, skill_info in skills.items():
+                        if isinstance(skill_info, dict):
+                            skills_data.append({
+                                "name": skill_name,
+                                "score": round(skill_info.get("score", 0.0), 1),
+                                "level": skill_info.get("level", "Medium"),
+                                "covered": skill_info.get("covered", False)
+                            })
+                    
                     subdomain_list.append({
                         "name": subdomain_name,
-                        "score": round(subdomain_data.get("average_score", 0.0), 1)
+                        "score": round(subdomain_data.get("average_score", 0.0), 1),
+                        "skills": skills_data
                     })
             
-            # Sort by score and take top 3
+            # Sort by score and take top 3 subdomains
             subdomain_list.sort(key=lambda x: x["score"], reverse=True)
             top_subdomains = subdomain_list[:3]
             
@@ -224,12 +235,12 @@ def generate_domain_summary(hierarchical_results: Dict[str, Any], domain_scores:
             conv_str = str(conversation_summary)
             conversation_text = conv_str[:500] + "..." if len(conv_str) > 500 else conv_str
     
-    # Build concise prompt
-    domain_summary_prompt = f"""Analyze interview domains and create a summary.
+    # Build prompt with skill details requirement
+    domain_summary_prompt = f"""Analyze interview domains and create a comprehensive summary with detailed skill-level insights.
 
 Context: {personalization_context}
 
-Domains (score 0-10): {json.dumps(domain_data_list, separators=(',', ':'))}
+Domains with skill details (score 0-10): {json.dumps(domain_data_list, separators=(',', ':'))}
 
 Key conversation points: {conversation_text if conversation_text else "Not available"}
 
@@ -245,7 +256,18 @@ Create a JSON summary with:
             "key_insights": "Brief insights",
             "recommendations": ["rec1", "rec2"],
             "subdomain_breakdown": [
-                {{"subdomain_name": "Subdomain", "average_score": 8.0, "key_findings": "Brief findings"}}
+                {{
+                    "subdomain_name": "Subdomain",
+                    "average_score": 8.0,
+                    "key_findings": "Brief findings about the subdomain",
+                    "skills": [
+                        {{
+                            "skill_name": "Skill Name",
+                            "score": 7.5,
+                            "analysis": "Write 3-4 sentences providing detailed analysis of this specific skill. Describe the candidate's performance naturally without mentioning the numeric score. Include: how the candidate demonstrated this skill during the interview, specific examples or patterns observed, strengths or areas for improvement related to this skill, and how this skill contributes to their overall profile. Make it informative, specific, and written in natural conversational language - avoid generic statements and never explicitly state the score."
+                        }}
+                    ]
+                }}
             ]
         }}
     ],
@@ -255,38 +277,88 @@ Create a JSON summary with:
     "overall_recommendations": "Brief recommendations"
 }}
 
+IMPORTANT: For each skill in the subdomain breakdown, provide a detailed "analysis" field with 3-4 sentences that:
+- Describes the candidate's performance and demonstration of this specific skill in natural, conversational language
+- NEVER explicitly mention the numeric score (e.g., avoid phrases like "A score of X indicates" or "With a score of X")
+- Instead, use natural language to describe performance level (e.g., "shows strong understanding", "demonstrates solid grasp", "needs development in")
+- Mentions specific examples, patterns, or observations related to this skill from the interview
+- Highlights strengths or areas for improvement specific to this skill
+- Connects how this skill contributes to their overall profile
+
+Make each skill analysis informative, specific, and meaningful - write as if you're providing feedback to the candidate, not reporting scores. Use natural language that flows conversationally.
+
+CRITICAL JSON FORMATTING REQUIREMENTS:
+- Return ONLY valid JSON, no markdown code blocks, no extra text
+- Escape all quotes within strings using backslash (e.g., "He said \"hello\"")
+- Ensure all strings are properly quoted
+- Use double quotes for JSON keys and string values
+- Ensure proper comma placement between array elements and object properties
+- Do not include trailing commas
+
 Return ONLY valid JSON."""
 
     try:
-        # Use max_tokens to limit response size and improve speed
         response = evaluation_llm.invoke(domain_summary_prompt)
         response_text = response.content.strip()
         
+        # Remove markdown code blocks if present
+        if response_text.startswith('```'):
+            lines = response_text.split('\n')
+            if lines[0].startswith('```'):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            response_text = '\n'.join(lines).strip()
+            if response_text.startswith('json'):
+                response_text = response_text[4:].strip()
+        
         # Try to extract JSON from the response
+        summary_data = None
         if response_text.startswith('{') and response_text.endswith('}'):
-            summary_data = json.loads(response_text)
-        else:
-            # Try to find JSON in the response
+            try:
+                summary_data = json.loads(response_text)
+            except json.JSONDecodeError:
+                pass
+        
+        if summary_data is None:
+            # Try to find JSON in the response using balanced braces
             import re
+            brace_count = 0
+            start_idx = -1
+            for i, char in enumerate(response_text):
+                if char == '{':
+                    if start_idx == -1:
+                        start_idx = i
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0 and start_idx != -1:
+                        json_text = response_text[start_idx:i+1]
+                        try:
+                            summary_data = json.loads(json_text)
+                            break
+                        except json.JSONDecodeError:
+                            start_idx = -1
+                            brace_count = 0
+        
+        if summary_data is None:
+            # Fallback: try regex
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
             if json_match:
-                summary_data = json.loads(json_match.group())
+                json_text = json_match.group()
+                summary_data = json.loads(json_text)
             else:
                 raise ValueError("No valid JSON found in response")
         
         return summary_data
         
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON in domain summary: {e}")
+        print(f"Response text (first 500 chars): {response_text[:500] if 'response_text' in locals() else 'N/A'}")
+        raise ValueError(f"Invalid JSON format in domain summary response: {str(e)}")
     except Exception as e:
         print(f"Error generating domain summary: {e}")
-        # Return a basic structure if generation fails
-        return {
-            "overall_domain_analysis": f"Error generating domain summary: {str(e)}",
-            "domains": [],
-            "cross_domain_patterns": "",
-            "top_performing_domains": [],
-            "domains_needing_attention": [],
-            "overall_recommendations": ""
-        }
+        raise e
 
 
 def _normalize_domain_name(name: str) -> str:
