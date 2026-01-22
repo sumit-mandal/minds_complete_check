@@ -9,7 +9,7 @@ from utils.database import InterviewDatabase
 from utils.state_manager import Persona, CandidatePersona
 from utils.trait_analyzer import generate_persona_report
 from utils.state_for_websocket import reconstruct_interview_state
-from utils.graph_3_llm_helper import generate_domain_summary
+from utils.graph_3_llm_helper import generate_domain_summary, organize_domains_by_cog
 
 
 router = APIRouter(prefix="/interviewer", tags=["Automated Interviewer"])
@@ -273,6 +273,23 @@ class DomainSummaryResponse(BaseModel):
     session_id: str
     domain_summary: Dict[str, Any]
     cached: bool = False
+
+class PausePeriod(BaseModel):
+    pause_start_time: str  # ISO format datetime string
+    pause_end_time: str   # ISO format datetime string
+
+class CalculateDurationRequest(BaseModel):
+    assessment_start_time: str  # ISO format datetime string
+    assessment_end_time: str    # ISO format datetime string
+    pauses: List[PausePeriod]   # List of pause periods
+
+class CalculateDurationResponse(BaseModel):
+    assessment_start_time: str
+    assessment_end_time: str
+    total_duration_seconds: int
+    pause_duration_seconds: int
+    actual_duration_seconds: int
+    number_of_pauses: int
     
 @router.get("/user/{user_id}/interviews", response_model=UserInterviewsResponse)
 async def get_all_interviews_by_user_id(user_id: str): 
@@ -358,6 +375,9 @@ async def get_domains_summary(session_id: str):
             persona=persona
         )
         
+        # Group domains by COG pairs
+        domain_summary = organize_domains_by_cog(domain_summary)
+        
         # Save to database
         database.save_domain_summary(session_id, domain_summary)
         
@@ -372,7 +392,79 @@ async def get_domains_summary(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate domain summary: {str(e)}")
 
-
+@router.post("/calculate-duration", response_model=CalculateDurationResponse)
+async def calculate_duration(request: CalculateDurationRequest):
+    """Calculate actual assessment duration by subtracting pause times"""
+    try:
+        # Parse assessment start and end times
+        assessment_start = datetime.fromisoformat(request.assessment_start_time.replace('Z', '+00:00'))
+        assessment_end = datetime.fromisoformat(request.assessment_end_time.replace('Z', '+00:00'))
+        
+        # Validate that end time is after start time
+        if assessment_end <= assessment_start:
+            raise HTTPException(
+                status_code=400, 
+                detail="Assessment end time must be after start time"
+            )
+        
+        # Calculate total duration
+        total_duration = assessment_end - assessment_start
+        total_duration_seconds = int(total_duration.total_seconds())
+        
+        # Calculate total pause duration
+        pause_duration_seconds = 0
+        for pause in request.pauses:
+            pause_start = datetime.fromisoformat(pause.pause_start_time.replace('Z', '+00:00'))
+            pause_end = datetime.fromisoformat(pause.pause_end_time.replace('Z', '+00:00'))
+            
+            # Validate pause times
+            if pause_end <= pause_start:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Pause end time must be after pause start time for pause: {pause.pause_start_time} to {pause.pause_end_time}"
+                )
+            
+            # Validate pause is within assessment time range
+            if pause_start < assessment_start or pause_end > assessment_end:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Pause period ({pause.pause_start_time} to {pause.pause_end_time}) must be within assessment time range"
+                )
+            
+            pause_duration = pause_end - pause_start
+            pause_duration_seconds += int(pause_duration.total_seconds())
+        
+        # Calculate actual duration (total - pauses)
+        actual_duration_seconds = total_duration_seconds - pause_duration_seconds
+        
+        # Ensure actual duration is not negative
+        if actual_duration_seconds < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Total pause duration exceeds assessment duration"
+            )
+        
+        return CalculateDurationResponse(
+            assessment_start_time=request.assessment_start_time,
+            assessment_end_time=request.assessment_end_time,
+            total_duration_seconds=total_duration_seconds,
+            pause_duration_seconds=pause_duration_seconds,
+            actual_duration_seconds=actual_duration_seconds,
+            number_of_pauses=len(request.pauses)
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid datetime format: {str(e)}. Please use ISO format (e.g., '2024-01-01T10:00:00Z' or '2024-01-01T10:00:00+00:00')"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to calculate duration: {str(e)}"
+        )
 
 @router.websocket("/submit/stream")
 async def submit_response_stream(websocket: WebSocket):
