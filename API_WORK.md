@@ -534,6 +534,59 @@ All endpoints are prefixed with `/interviewer`
 
 ---
 
+### 14. Calculate Duration
+**Endpoint**: `POST /interviewer/calculate-duration`
+
+**Purpose**: Calculate actual assessment duration by subtracting pause times from the total assessment duration.
+
+**Request Body**:
+```json
+{
+  "assessment_start_time": "2024-01-15T10:30:00Z",  // Required: ISO format datetime string
+  "assessment_end_time": "2024-01-15T10:45:00Z",    // Required: ISO format datetime string
+  "pauses": [                                        // Required: List of pause periods
+    {
+      "pause_start_time": "2024-01-15T10:35:00Z",  // ISO format datetime string
+      "pause_end_time": "2024-01-15T10:37:00Z"     // ISO format datetime string
+    },
+    {
+      "pause_start_time": "2024-01-15T10:40:00Z",
+      "pause_end_time": "2024-01-15T10:42:00Z"
+    }
+  ]
+}
+```
+
+**Response** (200 OK):
+```json
+{
+  "assessment_start_time": "2024-01-15T10:30:00Z",
+  "assessment_end_time": "2024-01-15T10:45:00Z",
+  "total_duration_seconds": 900,        // Total time from start to end
+  "pause_duration_seconds": 240,         // Sum of all pause durations
+  "actual_duration_seconds": 660,        // Total duration minus pauses
+  "number_of_pauses": 2                  // Count of pause periods
+}
+```
+
+**Use Case**: Calculate the actual time spent on an assessment by excluding periods when the user was paused (e.g., bathroom breaks, technical issues). Useful for accurate time tracking and reporting.
+
+**Error Handling**:
+- `400 Bad Request`: 
+  - If assessment end time is not after start time
+  - If pause end time is not after pause start time
+  - If pause periods are outside the assessment time range
+  - If total pause duration exceeds assessment duration
+  - If datetime format is invalid (must be ISO format)
+- `500 Internal Server Error`: If calculation fails
+
+**Notes**:
+- All datetime strings must be in ISO 8601 format (e.g., `"2024-01-15T10:30:00Z"` or `"2024-01-15T10:30:00+00:00"`)
+- Pause periods must be completely within the assessment time range
+- The `actual_duration_seconds` will always be non-negative (total duration minus pauses)
+
+---
+
 ## Common Response Patterns
 
 ### Success Response

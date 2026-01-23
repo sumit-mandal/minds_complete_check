@@ -315,13 +315,15 @@ def organize_domains_by_cog(domain_summary: Dict[str, Any]) -> Dict[str, Any]:
     if not domains:
         return domain_summary
     
-    # Define COG relationships as pairs (from PERSONA_DEFINITIONS)
+    # Define COG relationships as pairs
     cog_pairs = [
-        ("Empathy", "Relationships"),
-        ("Confidence", "Leadership"),
         ("Security", "Stability"),
+        ("Leadership", "Confidence"),
         ("Adaptability", "Creativity"),
+        ("Relationship", "Empathy"),
+        ("Relationships", "Empathy"),
         ("Communication", "Expression"),
+        ("Strategic Thinking", "Insights"),
         ("Strategic Thinking", "Insight"),
         ("Alignment", "Purpose"),
     ]
@@ -330,18 +332,25 @@ def organize_domains_by_cog(domain_summary: Dict[str, Any]) -> Dict[str, Any]:
     placed_indices = set()
     organized_domains = []
     
-    # Process each COG pair
+    # Process each COG pair - group them together
     for domain1_name, domain2_name in cog_pairs:
         idx1 = _find_domain_index(domains, domain1_name)
         idx2 = _find_domain_index(domains, domain2_name)
         
-        # Add first domain if found and not already placed
-        if idx1 != -1 and idx1 not in placed_indices:
+        # If both domains found, group them together
+        if idx1 != -1 and idx2 != -1 and idx1 not in placed_indices and idx2 not in placed_indices:
+            organized_domains.append({
+                "domain1": domains[idx1],
+                "domain2": domains[idx2]
+            })
+            placed_indices.add(idx1)
+            placed_indices.add(idx2)
+        # If only first domain found, add it separately
+        elif idx1 != -1 and idx1 not in placed_indices:
             organized_domains.append(domains[idx1])
             placed_indices.add(idx1)
-        
-        # Add second domain if found and not already placed
-        if idx2 != -1 and idx2 not in placed_indices:
+        # If only second domain found, add it separately
+        elif idx2 != -1 and idx2 not in placed_indices:
             organized_domains.append(domains[idx2])
             placed_indices.add(idx2)
     
