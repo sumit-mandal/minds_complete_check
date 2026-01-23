@@ -1,0 +1,61 @@
+name: Auto Deploy to EC2 (Python)
+
+on:
+  push:
+    branches:
+      - dev   # change if using master/main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e  # Exit on any error
+            echo "🚀 Deploy started"
+
+            cd /home/ec2-user/mirrormindsproj/minds_complete_check || {
+              echo "❌ Error: Directory not found"
+              exit 1
+            }
+
+            echo "📥 Reset & pull latest code"
+            git reset --hard HEAD
+            git pull origin dev || git pull origin main  # Try dev first, fallback to main
+
+            echo "🐍 Activate venv if exists"
+            if [ -d "venv" ]; then
+              source venv/bin/activate
+            else
+              echo "⚠️ Virtual environment not found, using system Python"
+            fi
+
+            echo "📦 Install requirements"
+            if [ -f "requirements.txt" ]; then
+              pip install -r requirements.txt --quiet
+            else
+              echo "⚠️ requirements.txt not found"
+            fi
+
+            echo "🔄 Restart app"
+
+            # SYSTEMD (recommended)
+            if systemctl list-units --type=service | grep -q mirrorminds; then
+              sudo systemctl restart mirrorminds.service
+              echo "✅ Service restarted successfully"
+            else
+              echo "⚠️ No systemd service found (mirrorminds.service)"
+              echo "💡 You may need to manually restart your application"
+            fi
+
+            echo "✅ Deploy completed successfully"
