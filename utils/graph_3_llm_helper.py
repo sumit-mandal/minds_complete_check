@@ -233,6 +233,9 @@ Domains (score 0-10): {json.dumps(domain_data_list, separators=(',', ':'))}
 
 Key conversation points: {conversation_text if conversation_text else "Not available"}
 
+key_findings in subdomain_name which is in subdomain_breakdown should be based on the response of the candidate and the conversation. And it should be in about 3-5 sentences in about 70 words. 
+
+
 Create a JSON summary with:
 {{
     "overall_domain_analysis": "Brief overview of performance across domains",
@@ -242,10 +245,10 @@ Create a JSON summary with:
             "average_score": 7.5,
             "strengths": ["strength1", "strength2"],
             "areas_for_improvement": ["area1", "area2"],
-            "key_insights": "Brief insights",
+            "key_insights": "detailed insights in about 3-5 sentences, this should be based on the response of the candidate and the conversation.",
             "recommendations": ["rec1", "rec2"],
             "subdomain_breakdown": [
-                {{"subdomain_name": "Subdomain", "average_score": 8.0, "key_findings": "Brief findings"}}
+                {{"subdomain_name": "Subdomain", "average_score": 8.0, "key_findings": "Brief findings in about 3-5 sentences, this should be based on the response of the candidate and the conversation."}}
             ]
         }}
     ],
