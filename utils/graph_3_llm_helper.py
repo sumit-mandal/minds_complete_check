@@ -190,7 +190,7 @@ def generate_domain_summary(hierarchical_results: Dict[str, Any], domain_scores:
                 if isinstance(subdomain_data, dict):
                     subdomain_list.append({
                         "name": subdomain_name,
-                        "score": round(subdomain_data.get("average_score", 0.0), 1)
+                        "score": round(subdomain_data.get("average_score", 0.0), 2)
                     })
             
             # Sort by score and take top 3
@@ -199,7 +199,7 @@ def generate_domain_summary(hierarchical_results: Dict[str, Any], domain_scores:
             
             domain_info = {
                 "domain": domain_name,
-                "score": round(domain_score, 1),
+                "score": round(domain_score, 2),
                 "subdomains": top_subdomains
             }
             domain_data_list.append(domain_info)
@@ -257,6 +257,8 @@ Create a JSON summary with:
     "domains_needing_attention": ["domain1"],
     "overall_recommendations": "Brief recommendations"
 }}
+
+CRITICAL: You MUST populate ALL fields including strengths, areas_for_improvement, recommendations for each domain, and top_performing_domains and domains_needing_attention arrays. These arrays must NOT be empty. Analyze the domain scores and conversation data to provide meaningful values for each field.
 
 Return ONLY valid JSON."""
 

@@ -219,7 +219,7 @@ class PersonaRankingGenerator:
         
         Persona: {persona['persona']['full_name']} 
         Traits: {persona['persona']['trait_1']} and {persona['persona']['trait_2']}
-        Score: {persona['score']:.1f} 
+        Score: {persona['score']:.2f} 
 
         Interview Insights:
         - Key Strengths: {summary_fields['key_strengths']}
@@ -268,8 +268,7 @@ class PersonaRankingGenerator:
         primary_trait = categorized_personas[0] if categorized_personas else None 
         secondary_traits = categorized_personas[1:3] if len(categorized_personas) > 1 else [] 
 
-
-        primary_decription = None  
+        primary_description = None
         secondary_descriptions = [] 
 
         if conversation_summary and primary_trait: 
@@ -287,14 +286,14 @@ class PersonaRankingGenerator:
                 {
                     "persona_code": p["persona"]["code"],
                     "persona_name": p["persona"]["full_name"],
-                    "score": round(p["score"], 1),
+                    "score": round(p["score"], 2),
                     "trait_1": {
                         "name": p["persona"]["trait_1"],
-                        "score": round(p["trait_1_score"], 1)
+                        "score": round(p["trait_1_score"], 2)
                     },
                     "trait_2": {
                         "name": p["persona"]["trait_2"],
-                        "score": round(p["trait_2_score"], 1)
+                        "score": round(p["trait_2_score"], 2)
                     },
                     "rank": p["rank"],
                     "category": p["category"]
@@ -304,14 +303,14 @@ class PersonaRankingGenerator:
             "primary_trait": {
                 "persona_code": primary_trait["persona"]["code"],
                 "persona_name": primary_trait["persona"]["full_name"],
-                "score": round(primary_trait["score"], 1),
+                "score": round(primary_trait["score"], 2),
                 "trait_1": {
                     "name": primary_trait["persona"]["trait_1"],
-                    "score": round(primary_trait["trait_1_score"], 1)
+                    "score": round(primary_trait["trait_1_score"], 2)
                 },
                 "trait_2": {
                     "name": primary_trait["persona"]["trait_2"],
-                    "score": round(primary_trait["trait_2_score"], 1)
+                    "score": round(primary_trait["trait_2_score"], 2)
                 },
                 "description": primary_description
             } if primary_trait else None,
@@ -319,21 +318,21 @@ class PersonaRankingGenerator:
                 {
                     "persona_code": st["persona"]["code"],
                     "persona_name": st["persona"]["full_name"],
-                    "score": round(st["score"], 1),
+                    "score": round(st["score"], 2),
                     "trait_1": {
                         "name": st["persona"]["trait_1"],
-                        "score": round(st["trait_1_score"], 1)
+                        "score": round(st["trait_1_score"], 2)
                     },
                     "trait_2": {
                         "name": st["persona"]["trait_2"],
-                        "score": round(st["trait_2_score"], 1)
+                        "score": round(st["trait_2_score"], 2)
                     },
                     "description": secondary_descriptions[i] if i < len(secondary_descriptions) else None
                 }
                 for i, st in enumerate(secondary_traits)
             ],
             "domain_scores": {
-                domain: round(score, 1)
+                domain: round(score, 2)
                 for domain, score in domain_scores.items()
             }
         }

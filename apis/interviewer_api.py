@@ -165,9 +165,18 @@ async def get_progress(session_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")
 
 @router.get("/results/{session_id}", response_model=ResultsResponse)
-async def get_results(session_id: str):
+async def get_results(session_id: str, use_db: bool = True):
     """Get current interview results"""
     try:
+        if use_db:
+            session_data = database.get_session_data(session_id)
+            if session_data and session_data.get("final_results"):
+                return ResultsResponse(results={
+                    "final_results": session_data.get("final_results"),
+                    "summary": session_data.get("final_results", {}).get("summary"),
+                    "evaluation": None
+                })
+        
         results = interviewer.get_results(session_id)
         return ResultsResponse(results=results)
     except Exception as e:
@@ -227,40 +236,34 @@ async def get_statistics():
         raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")
 
 @router.get("/persona-trait/{session_id}")
-async def get_persona_trait_report(session_id: str):
+async def get_persona_trait_report(session_id: str, use_db: bool = True):
     """Get persona trait report for a specific session"""
     session_data = database.get_session_data(session_id) 
     if not session_data:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    if use_db:
+        cached_report = database.get_persona_trait_report(session_id)
+        if cached_report:
+            return cached_report
+    
     final_results = session_data.get("final_results", {})
     hierarchical_results_raw = final_results.get("hierarchical_results")
     
-    # Check if hierarchical_results is None, empty dict, or missing
     if not hierarchical_results_raw or (isinstance(hierarchical_results_raw, dict) and len(hierarchical_results_raw) == 0):
-        # Try to use domain_scores as fallback
         domain_scores = final_results.get("domain_scores", {})
         if not domain_scores:
             raise HTTPException(status_code=404, detail="No hierarchical results or domain scores found")
-        else:
-            print(f"DEBUG API: hierarchical_results is empty, using domain_scores as fallback: {domain_scores}")
-            hierarchical_results_raw = {}  # Set to empty dict, will use fallback
-
-    print(f"DEBUG API: hierarchical_results_raw type: {type(hierarchical_results_raw)}")
-    print(f"DEBUG API: hierarchical_results_raw keys: {list(hierarchical_results_raw.keys()) if isinstance(hierarchical_results_raw, dict) else 'Not a dict'}")
-    if isinstance(hierarchical_results_raw, dict):
-        for key, value in hierarchical_results_raw.items():
-            print(f"DEBUG API: Domain '{key}': type={type(value)}, has average_score={isinstance(value, dict) and 'average_score' in value}")
+        hierarchical_results_raw = {}
 
     conversation_summary_data = database.get_conversation_summary(session_id) 
     conversation_summary = conversation_summary_data.get("conversation_summary") if conversation_summary_data else None
     
-    # Get fallback domain_scores in case hierarchical_results is empty or malformed
     fallback_domain_scores = final_results.get("domain_scores", {})
-    print(f"DEBUG API: fallback_domain_scores: {fallback_domain_scores}")
     
     report = generate_persona_report(hierarchical_results_raw, conversation_summary, fallback_domain_scores=fallback_domain_scores)
-    print("Persona Trait Report:",report)
+    database.save_persona_trait_report(session_id, report)
+    
     return report
 
 
@@ -303,24 +306,45 @@ async def get_all_interviews_by_user_id(user_id: str):
         return "User not found"
 
 @router.get("/domains-summary/{session_id}", response_model=DomainSummaryResponse)
-async def get_domains_summary(session_id: str):
+async def get_domains_summary(session_id: str, use_db: bool = True):
     """Get a comprehensive summary of all domains covered in the interview"""
     try:
-        # Check if session exists
         session_data = database.get_session_data(session_id)
         if not session_data:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        # Check if domain summary already exists in database
-        # cached_summary = database.get_domain_summary(session_id)
-        # if cached_summary:
-        #     return DomainSummaryResponse(
-        #         session_id=session_id,
-        #         domain_summary=cached_summary,
-        #         cached=True
-        #     )
+        if use_db:
+            cached_summary = database.get_domain_summary(session_id)
+            if cached_summary:
+                top_performing = cached_summary.get("top_performing_domains", [])
+                domains_needing_attention = cached_summary.get("domains_needing_attention", [])
+                
+                domains_list = cached_summary.get("domains", [])
+                has_empty_fields = False
+                
+                for item in domains_list:
+                    if isinstance(item, dict):
+                        if "domain1" in item:
+                            domain1 = item.get("domain1", {})
+                            domain2 = item.get("domain2", {})
+                            if (not domain1.get("strengths") or not domain1.get("areas_for_improvement") or 
+                                not domain1.get("recommendations") or not domain2.get("strengths") or 
+                                not domain2.get("areas_for_improvement") or not domain2.get("recommendations")):
+                                has_empty_fields = True
+                                break
+                        elif "domain_name" in item:
+                            if (not item.get("strengths") or not item.get("areas_for_improvement") or 
+                                not item.get("recommendations")):
+                                has_empty_fields = True
+                                break
+                
+                if not has_empty_fields and top_performing and domains_needing_attention:
+                    return DomainSummaryResponse(
+                        session_id=session_id,
+                        domain_summary=cached_summary,
+                        cached=True
+                    )
         
-        # Get final results
         final_results = session_data.get("final_results", {})
         hierarchical_results = final_results.get("hierarchical_results", {})
         domain_scores = final_results.get("domain_scores", {})
@@ -331,11 +355,9 @@ async def get_domains_summary(session_id: str):
                 detail="No domain data found for this session. The interview may not be completed yet."
             )
         
-        # Get conversation summary if available
         conversation_summary_data = database.get_conversation_summary(session_id)
         conversation_summary = conversation_summary_data.get("conversation_summary") if conversation_summary_data else None
         
-        # Get candidate info from LangGraph state if available
         name = None
         pronoun = None
         career_level = None
@@ -363,7 +385,6 @@ async def get_domains_summary(session_id: str):
         except Exception as e:
             print(f"Could not retrieve candidate info from LangGraph state: {e}")
         
-        # Generate domain summary
         domain_summary = generate_domain_summary(
             hierarchical_results=hierarchical_results,
             domain_scores=domain_scores,
@@ -375,10 +396,7 @@ async def get_domains_summary(session_id: str):
             persona=persona
         )
         
-        # Group domains by COG pairs
         domain_summary = organize_domains_by_cog(domain_summary)
-        
-        # Save to database
         database.save_domain_summary(session_id, domain_summary)
         
         return DomainSummaryResponse(

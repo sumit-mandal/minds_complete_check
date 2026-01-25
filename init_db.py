@@ -132,5 +132,37 @@ if __name__ == "__main__":
         else:
             print("⏭️  final_results already exists")
         
+        # Create domain_summaries table
+        if "domain_summaries" not in existing_tables:
+            conn.execute(text("""
+                CREATE TABLE domain_summaries (
+                    session_id UUID PRIMARY KEY,
+                    data JSONB NOT NULL DEFAULT '{}',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT fk_domain_summaries_session_id
+                    FOREIGN KEY (session_id) REFERENCES interview_sessions(session_id) ON DELETE CASCADE
+                )
+            """))
+            print("✅ Created domain_summaries")
+        else:
+            print("⏭️  domain_summaries already exists")
+        
+        # Create persona_trait_reports table
+        if "persona_trait_reports" not in existing_tables:
+            conn.execute(text("""
+                CREATE TABLE persona_trait_reports (
+                    session_id UUID PRIMARY KEY,
+                    data JSONB NOT NULL DEFAULT '{}',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT fk_persona_trait_reports_session_id
+                    FOREIGN KEY (session_id) REFERENCES interview_sessions(session_id) ON DELETE CASCADE
+                )
+            """))
+            print("✅ Created persona_trait_reports")
+        else:
+            print("⏭️  persona_trait_reports already exists")
+        
         # Remove conn.commit() - begin() auto-commits on success
         print("\n✅ All tables created successfully!")

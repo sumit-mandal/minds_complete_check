@@ -127,6 +127,32 @@ class FinalResult(Base):
     session = relationship("InterviewSession", back_populates="final_result")
 
 
+class DomainSummary(Base):
+    __tablename__ = "domain_summaries"
+
+    session_id = sa.Column(
+        pg.UUID(as_uuid=True),
+        sa.ForeignKey("interview_sessions.session_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    data = sa.Column(pg.JSONB, nullable=False, default=dict)
+    created_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+    updated_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+
+
+class PersonaTraitReport(Base):
+    __tablename__ = "persona_trait_reports"
+
+    session_id = sa.Column(
+        pg.UUID(as_uuid=True),
+        sa.ForeignKey("interview_sessions.session_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    data = sa.Column(pg.JSONB, nullable=False, default=dict)
+    created_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+    updated_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+
+
 @contextmanager
 def get_db_session() -> Session:
     session = SessionLocal()
@@ -648,38 +674,65 @@ Return JSON only."""
             }
 
     def save_domain_summary(self, session_id: str, domain_summary: Dict[str, Any]):
-        """Save domain summary to the final_results table"""
+        """Save domain summary to the domain_summaries table"""
         with get_db_session() as db:
-            final_result = (
-                db.query(FinalResult)
+            existing = (
+                db.query(DomainSummary)
                 .filter_by(session_id=self._to_uuid(session_id))
                 .first()
             )
             
-            if final_result:
-                # Update existing summary with domain_summary
-                current_summary = final_result.summary if final_result.summary else {}
-                current_summary["domain_summary"] = domain_summary
-                final_result.summary = current_summary
+            if existing:
+                existing.data = domain_summary
+                existing.updated_at = datetime.now(timezone.utc)
             else:
-                # Create new final_result entry with domain_summary
-                final_result = FinalResult(
+                db.add(DomainSummary(
                     session_id=self._to_uuid(session_id),
-                    summary={"domain_summary": domain_summary}
-                )
-                db.add(final_result)
+                    data=domain_summary
+                ))
 
     def get_domain_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve domain summary from the final_results table"""
+        """Retrieve domain summary from the domain_summaries table"""
         with get_db_session() as db:
-            final_result = (
-                db.query(FinalResult)
+            domain_summary = (
+                db.query(DomainSummary)
                 .filter_by(session_id=self._to_uuid(session_id))
                 .first()
             )
             
-            if final_result and final_result.summary:
-                return final_result.summary.get("domain_summary")
+            if domain_summary:
+                return domain_summary.data
+            return None
+
+    def save_persona_trait_report(self, session_id: str, persona_trait_report: Dict[str, Any]):
+        """Save persona trait report to the persona_trait_reports table"""
+        with get_db_session() as db:
+            existing = (
+                db.query(PersonaTraitReport)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .first()
+            )
+            
+            if existing:
+                existing.data = persona_trait_report
+                existing.updated_at = datetime.now(timezone.utc)
+            else:
+                db.add(PersonaTraitReport(
+                    session_id=self._to_uuid(session_id),
+                    data=persona_trait_report
+                ))
+
+    def get_persona_trait_report(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve persona trait report from the persona_trait_reports table"""
+        with get_db_session() as db:
+            report = (
+                db.query(PersonaTraitReport)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .first()
+            )
+            
+            if report:
+                return report.data
             return None
 
     def get_session_time_info(self, session_id: str) -> Dict[str, Any]:
