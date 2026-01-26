@@ -3,12 +3,10 @@
 Persona Ranking Utility
 
 Generates a personalized report ranking different personas based on domain scores
-from hierarchical_results. Identifies primary and secondary traits.
+from hierarchical_results using weighted COG groups.
 """
 
-# IMMEDIATE TEST - This should print immediately
 print("SCRIPT LOADED - trait_analyzer.py is running!")
-from re import S
 import re
 import sys
 from utils.graph_3_llm_helper import llm
@@ -19,7 +17,59 @@ from typing import Dict, Any, List, Optional
 
 
 class PersonaRankingGenerator:
-    """Generates persona rankings from hierarchical results"""
+    """Generates persona rankings from hierarchical results using weighted COG groups"""
+    
+    PERSONA_MODEL = {
+        "S-S": {
+            "highest": ["Security", "Stability"],
+            "supporting": ["Expression", "Relationships", "Purpose", "Alignment"],
+            "mid": ["Insight", "Communication"],
+            "stretch": ["Confidence", "Leadership"]
+        },
+        "C-L": {
+            "highest": ["Confidence", "Leadership"],
+            "supporting": ["Purpose", "Alignment", "Insight"],
+            "mid": ["Creativity", "Communication"],
+            "stretch": ["Security", "Empathy"]
+        },
+        "C-A": {
+            "highest": ["Creativity", "Adaptability"],
+            "supporting": ["Insight", "Communication"],
+            "mid": ["Confidence", "Purpose"],
+            "stretch": ["Security", "Relationships"]
+        },
+        "E-C": {
+            "highest": ["Expression", "Communication"],
+            "supporting": ["Purpose", "Empathy"],
+            "mid": ["Insight", "Creativity"],
+            "stretch": ["Security", "Leadership"]
+        },
+        "E-R": {
+            "highest": ["Empathy", "Relationships"],
+            "supporting": ["Security", "Communication"],
+            "mid": ["Purpose", "Insight"],
+            "stretch": ["Confidence", "Creativity"]
+        },
+        "I-S": {
+            "highest": ["Insight", "Strategic Thinking"],
+            "supporting": ["Purpose", "Creativity"],
+            "mid": ["Expression", "Security"],
+            "stretch": ["Empathy", "Leadership"]
+        },
+        "P-A": {
+            "highest": ["Purpose", "Alignment"],
+            "supporting": ["Insight", "Relationships"],
+            "mid": ["Communication", "Security"],
+            "stretch": ["Creativity", "Leadership"]
+        }
+    }
+    
+    WEIGHTS = {
+        "highest": 1.0,
+        "supporting": 0.7,
+        "mid": 0.4,
+        "stretch": 0.1
+    }
     
     PERSONA_DEFINITIONS = [
         {
@@ -74,15 +124,7 @@ class PersonaRankingGenerator:
     ]
     
     def _parse_hierarchical_results(self, hierarchical_results: Any) -> Dict[str, Any]:
-        """
-        Parse hierarchical_results from string or dict format
-        
-        Args:
-            hierarchical_results: Can be JSON string or dict
-            
-        Returns:
-            Parsed hierarchical results as dict
-        """
+        """Parse hierarchical_results from string or dict format"""
         if isinstance(hierarchical_results, str):
             return json.loads(hierarchical_results)
         elif isinstance(hierarchical_results, dict):
@@ -91,119 +133,114 @@ class PersonaRankingGenerator:
             raise ValueError(f"hierarchical_results must be str or dict, got {type(hierarchical_results)}")
     
     def _extract_domain_scores(self, hierarchical_results: Dict[str, Any]) -> Dict[str, float]:
-        """
-        Extract average scores for each domain from hierarchical_results
-        
-        Args:
-            hierarchical_results: Parsed hierarchical results dict
-            
-        Returns:
-            Dictionary mapping domain names to their average scores
-        """
+        """Extract average scores for each domain from hierarchical_results"""
         domain_scores = {}
-        
-        print(f"DEBUG: hierarchical_results type: {type(hierarchical_results)}")
-        print(f"DEBUG: hierarchical_results keys: {list(hierarchical_results.keys()) if isinstance(hierarchical_results, dict) else 'Not a dict'}")
         
         for domain_name, domain_data in hierarchical_results.items():
             if isinstance(domain_data, dict) and "average_score" in domain_data:
                 domain_scores[domain_name] = domain_data["average_score"]
-                print(f"Domain: {domain_name}, Score: {domain_data['average_score']}")
-            else:
-                print(f"DEBUG: Skipping domain '{domain_name}' - not a dict or missing average_score. Type: {type(domain_data)}, Keys: {list(domain_data.keys()) if isinstance(domain_data, dict) else 'N/A'}")
         
-        print(f"DEBUG: Extracted domain_scores: {domain_scores}")
         return domain_scores
 
     def _find_domain_score(self, trait_name: str, domain_scores: Dict[str, float]) -> Optional[float]:
-        """
-        Find domain score for a trait name, handling various domain name formats.
-        
-        Tries:
-        1. Exact match (case-insensitive)
-        2. Partial match (domain name contains trait name)
-        3. Split combined names (e.g., "Security and Stability" -> check for "Security" or "Stability")
-        
-        Args:
-            trait_name: The trait name to match (e.g., "Security", "Stability")
-            domain_scores: Dictionary of domain names to scores
-            
-        Returns:
-            Score if found, None otherwise
-        """
+        """Find domain score for a trait name, handling various domain name formats"""
         trait_lower = trait_name.lower()
         
-        # Try exact match (case-insensitive)
         for domain_name, score in domain_scores.items():
             if domain_name.lower() == trait_lower:
-                print(f"DEBUG: Exact match found - trait '{trait_name}' -> domain '{domain_name}'")
                 return score
         
-        # Try partial match (domain name contains trait name)
         for domain_name, score in domain_scores.items():
             domain_lower = domain_name.lower()
-            # Check if trait name is in domain name (as whole word)
-            if trait_lower in domain_lower:
-                # Make sure it's a whole word match, not just substring
-                pattern = r'\b' + re.escape(trait_lower) + r'\b'
-                if re.search(pattern, domain_lower):
-                    print(f"DEBUG: Partial match found - trait '{trait_name}' -> domain '{domain_name}'")
-                    return score
+            pattern = r'\b' + re.escape(trait_lower) + r'\b'
+            if re.search(pattern, domain_lower):
+                return score
         
-        # Try splitting combined domain names (e.g., "Security and Stability")
         for domain_name, score in domain_scores.items():
             domain_lower = domain_name.lower()
-            # Split by common separators: "and", "&", ",", "-"
             parts = re.split(r'\s+(?:and|&|,|-)\s+', domain_lower)
             if trait_lower in parts:
-                print(f"DEBUG: Split match found - trait '{trait_name}' -> domain '{domain_name}' (split)")
                 return score
         
-        print(f"DEBUG: No match found for trait '{trait_name}' in domains: {list(domain_scores.keys())}")
         return None
 
-    def calcuate_persona_scores(self,persona_def: Dict[str,str],domain_scores:Dict[str,float]) -> Optional[Dict[str,Any]]:
-        trait_1_score = self._find_domain_score(persona_def["trait_1"], domain_scores)
-        trait_2_score = self._find_domain_score(persona_def["trait_2"], domain_scores)
+    def _compute_persona_score(self, persona_code: str, domain_scores: Dict[str, float]) -> float:
+        """Compute weighted score for a persona based on COG groups"""
+        groups = self.PERSONA_MODEL[persona_code]
+        total = 0.0
+        weight_sum = 0.0
+        
+        for group_name, traits in groups.items():
+            weight = self.WEIGHTS[group_name]
+            for trait in traits:
+                score = self._find_domain_score(trait, domain_scores)
+                if score is not None:
+                    total += score * weight
+                    weight_sum += weight
+        
+        return round(total / weight_sum, 2) if weight_sum > 0 else 0.0
 
-        if trait_1_score is None or trait_2_score is None: 
-            print(f"DEBUG: Cannot calculate persona score for {persona_def['name']} - trait_1: {persona_def['trait_1']}={trait_1_score}, trait_2: {persona_def['trait_2']}={trait_2_score}")
-            return None 
-
-        persona_score = (trait_1_score + trait_2_score) / 2  
-        print(f"Persona: {persona_def['name']}, Score: {persona_score:.2f}")
-        return { 
-        "persona": persona_def,
-        "score":persona_score,
-        "trait_1_score":trait_1_score,
-        "trait_2_score":trait_2_score,
-        "rank":0,
-        "category":""
+    def _get_trait_scores(self, persona_code: str, domain_scores: Dict[str, float]) -> Dict[str, Optional[float]]:
+        """Get scores for trait_1 and trait_2 of a persona"""
+        persona_def = next(p for p in self.PERSONA_DEFINITIONS if p["code"] == persona_code)
+        return {
+            "trait_1_score": self._find_domain_score(persona_def["trait_1"], domain_scores),
+            "trait_2_score": self._find_domain_score(persona_def["trait_2"], domain_scores)
         }
 
-    def rank_personas(self,persona_rankings: List[Dict[str,Any]]) -> List[Dict[str,Any]]:
-        sorted_ranking = sorted(persona_rankings, key=lambda x: x["score"],reverse=True)
-        for rank,persona_ranking in enumerate(sorted_ranking,start=1):
-            persona_ranking["rank"] = rank
-            print(f"Ranked Persona: {persona_ranking['persona']['name']}, Score: {persona_ranking['score']:.2f}, Rank: {rank}")
-        return sorted_ranking
+    def _get_cog_groups(self, persona_code: str, domain_scores: Dict[str, float]) -> Dict[str, List[Dict[str, Any]]]:
+        """Get COG groups with their traits and scores"""
+        groups = self.PERSONA_MODEL[persona_code]
+        cog_groups = {}
         
-    def categorize_personas(self,ranked_personas:List[Dict[str,Any]]) -> List[Dict[str,Any]]: 
-        if not ranked_personas:
-            return ranked_personas
+        for group_name, traits in groups.items():
+            if group_name != "highest":
+                cog_groups[group_name] = [
+                    {
+                        "trait": trait,
+                        "score": self._find_domain_score(trait, domain_scores)
+                    }
+                    for trait in traits
+                ]
+        
+        return cog_groups
 
-        for idx,persona_ranking in enumerate(ranked_personas):
-            if idx == 0:
-                persona_ranking["category"] = "Primary"
-            elif idx == 1:
-                persona_ranking["category"] = "Secondary"
-            else:
-                persona_ranking["category"] = "Tertiary"
+    def _get_weighted_score_breakdown(self, persona_code: str, domain_scores: Dict[str, float]) -> Dict[str, Any]:
+        """Get weighted score breakdown per COG group"""
+        groups = self.PERSONA_MODEL[persona_code]
+        breakdown = {}
+        
+        for group_name, traits in groups.items():
+            weight = self.WEIGHTS[group_name]
+            group_total = 0.0
+            group_weight_sum = 0.0
+            trait_details = []
+            
+            for trait in traits:
+                score = self._find_domain_score(trait, domain_scores)
+                if score is not None:
+                    weighted_score = score * weight
+                    group_total += weighted_score
+                    group_weight_sum += weight
+                    trait_details.append({
+                        "trait": trait,
+                        "raw_score": round(score, 2),
+                        "weight": weight,
+                        "weighted_score": round(weighted_score, 2)
+                    })
+            
+            breakdown[group_name] = {
+                "weight": weight,
+                "traits": trait_details,
+                "group_weighted_total": round(group_total, 2),
+                "group_weight_sum": round(group_weight_sum, 2),
+                "group_average": round(group_total / group_weight_sum, 2) if group_weight_sum > 0 else 0.0
+            }
+        
+        return breakdown
 
-        return ranked_personas
-
-    def _generate_persona_description(self,persona:Dict[str,Any], conversation_summary: Dict[str,Any]) -> str:
-
+    def _generate_persona_description(self, persona: Dict[str, Any], conversation_summary: Dict[str, Any]) -> str:
+        """Generate personalized description for a persona"""
         summary_fields = {
             "key_strengths": conversation_summary.get("key_strengths"),
             "areas_for_improvement": conversation_summary.get("areas_for_improvement"),
@@ -212,7 +249,6 @@ class PersonaRankingGenerator:
             "emotional_intelligence": conversation_summary.get("emotional_intelligence"),
             "professional_maturity": conversation_summary.get("professional_maturity"),
             "specific_examples": conversation_summary.get("specific_examples"),
-
         }
 
         prompt = f"""Generate a personalized description of what it means for this person to have the persona "{persona['persona']['full_name']}" based on their interview responses. 
@@ -237,17 +273,12 @@ class PersonaRankingGenerator:
         response = llm.invoke(prompt) 
         return response.content.strip()
     
-    def generate_report(self,hierarchical_results:Any, conversation_summary:Optional [Dict[str,Any]]=None, fallback_domain_scores:Optional[Dict[str, float]]=None) :
+    def generate_report(self, hierarchical_results: Any, conversation_summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Generate persona ranking report using weighted COG groups"""
         parsed_results = self._parse_hierarchical_results(hierarchical_results) 
         domain_scores = self._extract_domain_scores(parsed_results)
         
-        # Fallback: if no domain scores extracted from hierarchical_results, use fallback_domain_scores
-        if not domain_scores and fallback_domain_scores:
-            print("DEBUG: Using fallback domain_scores from flat structure")
-            domain_scores = fallback_domain_scores
-        
         if not domain_scores:
-            print("WARNING: No domain scores found! Returning empty report.")
             return {
                 "ranked_personas": [],
                 "primary_trait": None,
@@ -255,78 +286,97 @@ class PersonaRankingGenerator:
                 "domain_scores": {}
             }
         
-        persona_rankings = [] 
+        persona_scores = {}
+        for persona_code in self.PERSONA_MODEL.keys():
+            score = self._compute_persona_score(persona_code, domain_scores)
+            persona_scores[persona_code] = score
 
-        for persona_def in self.PERSONA_DEFINITIONS: 
-            ranking = self.calcuate_persona_scores(persona_def,domain_scores) 
-            if ranking:
-                persona_rankings.append(ranking)
+        ranked_personas_list = sorted(persona_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        persona_rankings = []
+        for rank, (persona_code, score) in enumerate(ranked_personas_list, start=1):
+            persona_def = next(p for p in self.PERSONA_DEFINITIONS if p["code"] == persona_code)
+            trait_scores = self._get_trait_scores(persona_code, domain_scores)
+            cog_groups = self._get_cog_groups(persona_code, domain_scores)
+            weighted_breakdown = self._get_weighted_score_breakdown(persona_code, domain_scores)
+            
+            persona_rankings.append({
+                "persona": persona_def,
+                "score": score,
+                "trait_1_score": trait_scores["trait_1_score"],
+                "trait_2_score": trait_scores["trait_2_score"],
+                "rank": rank,
+                "category": "Primary" if rank == 1 else ("Secondary" if rank == 2 else "Tertiary"),
+                "cog_groups": cog_groups,
+                "weighted_score_breakdown": weighted_breakdown
+            })
 
-        ranked_personas = self.rank_personas(persona_rankings)
-        categorized_personas = self.categorize_personas(ranked_personas)
-
-        primary_trait = categorized_personas[0] if categorized_personas else None 
-        secondary_traits = categorized_personas[1:3] if len(categorized_personas) > 1 else [] 
+        primary_trait = persona_rankings[0] if persona_rankings else None
+        secondary_traits = persona_rankings[1:3] if len(persona_rankings) > 1 else []
 
         primary_description = None
-        secondary_descriptions = [] 
+        secondary_descriptions = []
 
-        if conversation_summary and primary_trait: 
+        if conversation_summary and primary_trait:
             primary_description = self._generate_persona_description(primary_trait, conversation_summary)
 
-        if conversation_summary and secondary_traits: 
+        if conversation_summary and secondary_traits:
             for st in secondary_traits:
                 description = self._generate_persona_description(st, conversation_summary)
                 secondary_descriptions.append(description)
-
-
 
         return {
             "ranked_personas": [
                 {
                     "persona_code": p["persona"]["code"],
                     "persona_name": p["persona"]["full_name"],
-                    "score": round(p["score"], 2),
+                    "score": p["score"],
                     "trait_1": {
                         "name": p["persona"]["trait_1"],
-                        "score": round(p["trait_1_score"], 2)
+                        "score": round(p["trait_1_score"], 2) if p["trait_1_score"] is not None else None
                     },
                     "trait_2": {
                         "name": p["persona"]["trait_2"],
-                        "score": round(p["trait_2_score"], 2)
+                        "score": round(p["trait_2_score"], 2) if p["trait_2_score"] is not None else None
                     },
                     "rank": p["rank"],
-                    "category": p["category"]
+                    "category": p["category"],
+                    "cog_groups": p["cog_groups"],
+                    "weighted_score_breakdown": p["weighted_score_breakdown"]
                 }
-                for p in categorized_personas
+                for p in persona_rankings
             ],
             "primary_trait": {
                 "persona_code": primary_trait["persona"]["code"],
                 "persona_name": primary_trait["persona"]["full_name"],
-                "score": round(primary_trait["score"], 2),
+                "score": primary_trait["score"],
                 "trait_1": {
                     "name": primary_trait["persona"]["trait_1"],
-                    "score": round(primary_trait["trait_1_score"], 2)
+                    "score": round(primary_trait["trait_1_score"], 2) if primary_trait["trait_1_score"] is not None else None
                 },
                 "trait_2": {
                     "name": primary_trait["persona"]["trait_2"],
-                    "score": round(primary_trait["trait_2_score"], 2)
+                    "score": round(primary_trait["trait_2_score"], 2) if primary_trait["trait_2_score"] is not None else None
                 },
+                "cog_groups": primary_trait["cog_groups"],
+                "weighted_score_breakdown": primary_trait["weighted_score_breakdown"],
                 "description": primary_description
             } if primary_trait else None,
             "secondary_traits": [
                 {
                     "persona_code": st["persona"]["code"],
                     "persona_name": st["persona"]["full_name"],
-                    "score": round(st["score"], 2),
+                    "score": st["score"],
                     "trait_1": {
                         "name": st["persona"]["trait_1"],
-                        "score": round(st["trait_1_score"], 2)
+                        "score": round(st["trait_1_score"], 2) if st["trait_1_score"] is not None else None
                     },
                     "trait_2": {
                         "name": st["persona"]["trait_2"],
-                        "score": round(st["trait_2_score"], 2)
+                        "score": round(st["trait_2_score"], 2) if st["trait_2_score"] is not None else None
                     },
+                    "cog_groups": st["cog_groups"],
+                    "weighted_score_breakdown": st["weighted_score_breakdown"],
                     "description": secondary_descriptions[i] if i < len(secondary_descriptions) else None
                 }
                 for i, st in enumerate(secondary_traits)
@@ -338,57 +388,7 @@ class PersonaRankingGenerator:
         }
 
 
-
-def generate_persona_report(hierarchical_results: Any, conversation_summary: Optional[Dict[str, Any]] = None, fallback_domain_scores: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+def generate_persona_report(hierarchical_results: Any, conversation_summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Generate persona report from hierarchical results"""
     generator = PersonaRankingGenerator()
-    return generator.generate_report(hierarchical_results, conversation_summary, fallback_domain_scores=fallback_domain_scores)
-
-
-
-
-
-
-
-# # Simple test section
-# if __name__ == "__main__":
-#     import sys
-#     from pathlib import Path
-    
-#     # Get session_id from command line
-#     if len(sys.argv) < 2:
-#         print("Usage: python utils/trait_analyzer.py <session_id>")
-#         sys.exit(1)
-    
-#     session_id = sys.argv[1]
-#     print(f"Session ID: {session_id}")
-    
-#     # Import database
-#     sys.path.insert(0, str(Path(__file__).parent.parent))
-#     from utils.database import InterviewDatabase
-    
-#     # Get data
-#     db = InterviewDatabase()
-#     session_data = db.get_session_data(session_id)
-    
-#     if not session_data:
-#         print(f"Session {session_id} not found")
-#         sys.exit(1)
-    
-#     # Get hierarchical_results
-#     final_results = session_data.get("final_results", {})
-#     hierarchical_results_raw = final_results.get("hierarchical_results")
-    
-#     if not hierarchical_results_raw:
-#         print("No hierarchical_results found")
-#         sys.exit(1)
-    
-#     # Parse and extract
-#     generator = PersonaRankingGenerator()
-#     hierarchical_results = generator._parse_hierarchical_results(hierarchical_results_raw)
-#     # domain_scores = generator._extract_domain_scores(hierarchical_results)
-#     # calcuate_persona_scores = generator.calcuate_persona_scores(generator.PERSONA_DEFINITIONS[0],domain_scores)
-#     # ranked_personas = generator.rank_personas([calcuate_persona_scores])
-#     # categorized_personas = generator.categorize_personas(ranked_personas)
-#     report = generator.generate_report(hierarchical_results)
-#     print(report)
-  
+    return generator.generate_report(hierarchical_results, conversation_summary)

@@ -259,9 +259,7 @@ async def get_persona_trait_report(session_id: str, use_db: bool = True):
     conversation_summary_data = database.get_conversation_summary(session_id) 
     conversation_summary = conversation_summary_data.get("conversation_summary") if conversation_summary_data else None
     
-    fallback_domain_scores = final_results.get("domain_scores", {})
-    
-    report = generate_persona_report(hierarchical_results_raw, conversation_summary, fallback_domain_scores=fallback_domain_scores)
+    report = generate_persona_report(hierarchical_results_raw, conversation_summary)
     database.save_persona_trait_report(session_id, report)
     
     return report

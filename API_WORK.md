@@ -1,9 +1,11 @@
 # API Documentation
 
 ## Base URL
+**Base URL**: `https://api.mirrorminds.ai`
+
 All endpoints are prefixed with `/interviewer`
 
-**Example**: `POST /interviewer/start`
+**Example**: `POST https://api.mirrorminds.ai/interviewer/start`
 
 ---
 
@@ -20,7 +22,7 @@ All endpoints are prefixed with `/interviewer`
 ## Interview Lifecycle
 
 ### 1. Start Interview
-**Endpoint**: `POST /interviewer/start`
+**Endpoint**: `POST https://api.mirrorminds.ai/interviewer/start`
 
 **Purpose**: Creates a new interview session and returns the first question.
 
@@ -77,7 +79,7 @@ All endpoints are prefixed with `/interviewer`
 ---
 
 ### 2. Submit Response
-**Endpoint**: `POST /interviewer/submit`
+**Endpoint**: `POST https://api.mirrorminds.ai/interviewer/submit`
 
 **Purpose**: Submits candidate's answer and gets the next question or final results if interview is complete.
 
@@ -157,7 +159,7 @@ All endpoints are prefixed with `/interviewer`
 ## Session Management
 
 ### 3. Get Progress
-**Endpoint**: `GET /interviewer/progress/{session_id}`
+**Endpoint**: `GET https://api.mirrorminds.ai/interviewer/progress/{session_id}`
 
 **Purpose**: Get current interview progress without submitting a response.
 
@@ -185,7 +187,7 @@ All endpoints are prefixed with `/interviewer`
 ---
 
 ### 4. Get Results
-**Endpoint**: `GET /interviewer/results/{session_id}`
+**Endpoint**: `GET https://api.mirrorminds.ai/interviewer/results/{session_id}`
 
 **Purpose**: Get current interview results (works even if interview is in progress).
 
@@ -219,7 +221,7 @@ All endpoints are prefixed with `/interviewer`
 ---
 
 ### 5. Get Session Data
-**Endpoint**: `GET /interviewer/sessions/{session_id}`
+**Endpoint**: `GET https://api.mirrorminds.ai/interviewer/sessions/{session_id}`
 
 **Purpose**: Get complete session data including all responses, evaluations, and final results.
 
@@ -265,7 +267,7 @@ All endpoints are prefixed with `/interviewer`
 ---
 
 ### 6. Get All Sessions
-**Endpoint**: `GET /interviewer/sessions`
+**Endpoint**: `GET https://api.mirrorminds.ai/interviewer/sessions`
 
 **Purpose**: Get list of all interview sessions (useful for admin dashboards).
 
@@ -301,7 +303,7 @@ All endpoints are prefixed with `/interviewer`
 ## Results & Reports
 
 ### 7. Get Persona Trait Report
-**Endpoint**: `GET /interviewer/persona-trait/{session_id}`
+**Endpoint**: `GET https://api.mirrorminds.ai/interviewer/persona-trait/{session_id}`
 
 **Purpose**: Get a detailed personality/trait analysis report based on interview responses.
 
@@ -330,7 +332,7 @@ All endpoints are prefixed with `/interviewer`
 ---
 
 ### 8. Get Domains Summary
-**Endpoint**: `GET /interviewer/domains-summary/{session_id}`
+**Endpoint**: `GET https://api.mirrorminds.ai/interviewer/domains-summary/{session_id}`
 
 **Purpose**: Get a comprehensive summary of all domains covered in the interview with detailed analysis.
 
@@ -366,7 +368,7 @@ All endpoints are prefixed with `/interviewer`
 ---
 
 ### 9. Get Statistics
-**Endpoint**: `GET /interviewer/statistics`
+**Endpoint**: `GET https://api.mirrorminds.ai/interviewer/statistics`
 
 **Purpose**: Get overall statistics across all interview sessions.
 
@@ -393,7 +395,7 @@ All endpoints are prefixed with `/interviewer`
 ## User Data
 
 ### 10. Get User Interviews
-**Endpoint**: `GET /interviewer/user/{user_id}/interviews`
+**Endpoint**: `GET https://api.mirrorminds.ai/interviewer/user/{user_id}/interviews`
 
 **Purpose**: Get all interview sessions for a specific user.
 
@@ -435,7 +437,7 @@ All endpoints are prefixed with `/interviewer`
 ## WebSocket Streaming
 
 ### 11. Submit Response Stream
-**Endpoint**: `WS /interviewer/submit/stream`
+**Endpoint**: `WS wss://api.mirrorminds.ai/interviewer/submit/stream`
 
 **Purpose**: WebSocket endpoint for real-time streaming of interview responses (evaluation, questions, summaries).
 
@@ -497,7 +499,7 @@ All endpoints are prefixed with `/interviewer`
 ## Utility Endpoints
 
 ### 12. Reset Interview
-**Endpoint**: `POST /interviewer/reset`
+**Endpoint**: `POST https://api.mirrorminds.ai/interviewer/reset`
 
 **Purpose**: Reset the interview state (clears all in-memory state). **Note**: This is a global reset, use with caution.
 
@@ -518,7 +520,7 @@ All endpoints are prefixed with `/interviewer`
 ---
 
 ### 13. Health Check
-**Endpoint**: `GET /interviewer/health`
+**Endpoint**: `GET https://api.mirrorminds.ai/interviewer/health`
 
 **Purpose**: Check if the API is running and healthy.
 
@@ -535,7 +537,7 @@ All endpoints are prefixed with `/interviewer`
 ---
 
 ### 14. Calculate Duration
-**Endpoint**: `POST /interviewer/calculate-duration`
+**Endpoint**: `POST https://api.mirrorminds.ai/interviewer/calculate-duration`
 
 **Purpose**: Calculate actual assessment duration by subtracting pause times from the total assessment duration.
 
@@ -615,29 +617,29 @@ All successful responses return `200 OK` with JSON body matching the response mo
 - Handle session expiration gracefully
 
 ### 2. Polling vs WebSocket
-- Use REST endpoints (`/submit`) for simple request-response flow
-- Use WebSocket (`/submit/stream`) for real-time streaming updates
+- Use REST endpoints (`https://api.mirrorminds.ai/interviewer/submit`) for simple request-response flow
+- Use WebSocket (`wss://api.mirrorminds.ai/interviewer/submit/stream`) for real-time streaming updates
 - WebSocket provides better UX for long-running evaluations
 
 ### 3. Error Handling
-- Always check `interview_complete` flag in `/submit` response
+- Always check `interview_complete` flag in `https://api.mirrorminds.ai/interviewer/submit` response
 - Handle `404` errors by redirecting to start page
 - Show user-friendly error messages from `detail` field
 
 ### 4. Progress Tracking
-- Use `/progress/{session_id}` to update progress bars
+- Use `https://api.mirrorminds.ai/interviewer/progress/{session_id}` to update progress bars
 - Poll this endpoint periodically if needed (or use WebSocket)
 - Display `progress_percentage` and `question_number` to users
 
 ### 5. Results Display
-- Use `/results/{session_id}` for current results
-- Use `/domains-summary/{session_id}` for detailed breakdown
-- Use `/persona-trait/{session_id}` for personality insights
+- Use `https://api.mirrorminds.ai/interviewer/results/{session_id}` for current results
+- Use `https://api.mirrorminds.ai/interviewer/domains-summary/{session_id}` for detailed breakdown
+- Use `https://api.mirrorminds.ai/interviewer/persona-trait/{session_id}` for personality insights
 - Cache results to avoid unnecessary API calls
 
 ### 6. User History
-- Use `/user/{user_id}/interviews` to show interview history
-- Link each interview to `/sessions/{session_id}` for details
+- Use `https://api.mirrorminds.ai/interviewer/user/{user_id}/interviews` to show interview history
+- Link each interview to `https://api.mirrorminds.ai/interviewer/sessions/{session_id}` for details
 - Display status badges (completed, in_progress)
 
 ---
@@ -646,7 +648,7 @@ All successful responses return `200 OK` with JSON body matching the response mo
 
 ```javascript
 // 1. Start Interview
-const startResponse = await fetch('/interviewer/start', {
+const startResponse = await fetch('https://api.mirrorminds.ai/interviewer/start', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -662,7 +664,7 @@ const { session_id, current_question } = await startResponse.json();
 displayQuestion(current_question);
 
 // 3. Submit response
-const submitResponse = await fetch('/interviewer/submit', {
+const submitResponse = await fetch('https://api.mirrorminds.ai/interviewer/submit', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
