@@ -270,7 +270,8 @@ def evaluate_response(state: InterviewState) -> InterviewState:
         database.save_session_completion(
             session_id=session_id,
             final_results=final_results,
-            completion_reason=completion_reason
+            completion_reason=completion_reason,
+            summary=summary
         )
         
         return {
@@ -336,7 +337,8 @@ def generate_question(state: InterviewState) -> InterviewState:
         database.save_session_completion(
             session_id=state["session_id"],
             final_results=final_results,
-            completion_reason=completion_reason
+            completion_reason=completion_reason,
+            summary=summary
         )
         
         return {

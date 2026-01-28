@@ -299,6 +299,7 @@ class PersonaRankingGenerator:
             trait_scores = self._get_trait_scores(persona_code, domain_scores)
             cog_groups = self._get_cog_groups(persona_code, domain_scores)
             weighted_breakdown = self._get_weighted_score_breakdown(persona_code, domain_scores)
+            weighted_score_sum = round(sum(group["group_weighted_total"] for group in weighted_breakdown.values()), 2)
             
             persona_rankings.append({
                 "persona": persona_def,
@@ -308,7 +309,8 @@ class PersonaRankingGenerator:
                 "rank": rank,
                 "category": "Primary" if rank == 1 else ("Secondary" if rank == 2 else "Tertiary"),
                 "cog_groups": cog_groups,
-                "weighted_score_breakdown": weighted_breakdown
+                "weighted_score_breakdown": weighted_breakdown,
+                "weighted_score_sum": weighted_score_sum
             })
 
         primary_trait = persona_rankings[0] if persona_rankings else None
@@ -342,7 +344,8 @@ class PersonaRankingGenerator:
                     "rank": p["rank"],
                     "category": p["category"],
                     "cog_groups": p["cog_groups"],
-                    "weighted_score_breakdown": p["weighted_score_breakdown"]
+                    "weighted_score_breakdown": p["weighted_score_breakdown"],
+                    "weighted_score_sum": p["weighted_score_sum"]
                 }
                 for p in persona_rankings
             ],
@@ -360,6 +363,7 @@ class PersonaRankingGenerator:
                 },
                 "cog_groups": primary_trait["cog_groups"],
                 "weighted_score_breakdown": primary_trait["weighted_score_breakdown"],
+                "weighted_score_sum": primary_trait["weighted_score_sum"],
                 "description": primary_description
             } if primary_trait else None,
             "secondary_traits": [
@@ -377,6 +381,7 @@ class PersonaRankingGenerator:
                     },
                     "cog_groups": st["cog_groups"],
                     "weighted_score_breakdown": st["weighted_score_breakdown"],
+                    "weighted_score_sum": st["weighted_score_sum"],
                     "description": secondary_descriptions[i] if i < len(secondary_descriptions) else None
                 }
                 for i, st in enumerate(secondary_traits)

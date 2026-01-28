@@ -171,13 +171,31 @@ async def get_results(session_id: str, use_db: bool = True):
         if use_db:
             session_data = database.get_session_data(session_id)
             if session_data and session_data.get("final_results"):
+                final_results = session_data.get("final_results", {})
+                
+                # Get summary from interview_summaries table
+                summary = database.get_interview_summary(session_id)
+                
+                # Get session time info to match /submit API response structure
+                time_info = database.get_session_time_info(session_id)
+                
                 return ResultsResponse(results={
-                    "final_results": session_data.get("final_results"),
-                    "summary": session_data.get("final_results", {}).get("summary"),
-                    "evaluation": None
+                    "final_results": final_results,
+                    "summary": summary,
+                    "evaluation": None,
+                    "completion_reason": session_data.get("session", {}).get("completion_reason"),
+                    "start_time": time_info.get("start_time") if time_info else None,
+                    "end_time": time_info.get("end_time") if time_info else None,
+                    "duration_seconds": time_info.get("duration_seconds") if time_info else None,
                 })
         
         results = interviewer.get_results(session_id)
+        # Get session time info to match /submit API response structure
+        time_info = database.get_session_time_info(session_id)
+        results["start_time"] = time_info.get("start_time") if time_info else None
+        results["end_time"] = time_info.get("end_time") if time_info else None
+        results["duration_seconds"] = time_info.get("duration_seconds") if time_info else None
+        
         return ResultsResponse(results=results)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get results: {str(e)}")

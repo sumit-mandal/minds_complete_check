@@ -153,6 +153,19 @@ class PersonaTraitReport(Base):
     updated_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
 
 
+class InterviewSummary(Base):
+    __tablename__ = "interview_summaries"
+
+    session_id = sa.Column(
+        pg.UUID(as_uuid=True),
+        sa.ForeignKey("interview_sessions.session_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    summary = sa.Column(pg.JSONB, nullable=False, default=dict)
+    created_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+    updated_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+
+
 @contextmanager
 def get_db_session() -> Session:
     session = SessionLocal()
@@ -251,7 +264,7 @@ class InterviewDatabase:
             db.add_all(entries)
 
     def save_session_completion(
-        self, session_id: str, final_results: Dict[str, Any], completion_reason: str
+        self, session_id: str, final_results: Dict[str, Any], completion_reason: str, summary: Optional[Dict[str, Any]] = None
     ):
         with get_db_session() as db:
             session_obj = (
@@ -272,9 +285,13 @@ class InterviewDatabase:
                     domain_scores=final_results.get("domain_scores", {}),
                     skill_scores=final_results.get("skill_scores", {}),
                     hierarchical_results=final_results.get("hierarchical_results", {}),
-                    summary=final_results.get("summary", {}),
+                    summary={},
                 )
             )
+            
+            # Save summary to separate interview_summaries table
+            if summary:
+                self.save_interview_summary(session_id, summary)
 
     def get_session_data(self, session_id: str) -> Optional[Dict[str, Any]]:
         with get_db_session() as db:
@@ -764,6 +781,37 @@ Return JSON only."""
                 "end_time": end_time.isoformat() if end_time else None,
                 "duration_seconds": duration_seconds,
             }
+
+    def save_interview_summary(self, session_id: str, summary: Dict[str, Any]):
+        """Save interview summary to the interview_summaries table"""
+        with get_db_session() as db:
+            existing = (
+                db.query(InterviewSummary)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .first()
+            )
+            
+            if existing:
+                existing.summary = summary
+                existing.updated_at = datetime.now(timezone.utc)
+            else:
+                db.add(InterviewSummary(
+                    session_id=self._to_uuid(session_id),
+                    summary=summary
+                ))
+
+    def get_interview_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve interview summary from the interview_summaries table"""
+        with get_db_session() as db:
+            summary_obj = (
+                db.query(InterviewSummary)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .first()
+            )
+            
+            if summary_obj:
+                return summary_obj.summary
+            return None
 
     def get_previous_questions(self, session_id: str, limit: int = 10) -> List[str]:
         """Get previously asked questions for a session"""
