@@ -239,8 +239,8 @@ class PersonaRankingGenerator:
         
         return breakdown
 
-    def _generate_persona_description(self, persona: Dict[str, Any], conversation_summary: Dict[str, Any]) -> str:
-        """Generate personalized description for a persona"""
+    def _generate_persona_description(self, persona: Dict[str, Any], conversation_summary: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate structured, personalized insights for a persona using the LLM."""
         summary_fields = {
             "key_strengths": conversation_summary.get("key_strengths"),
             "areas_for_improvement": conversation_summary.get("areas_for_improvement"),
@@ -251,27 +251,60 @@ class PersonaRankingGenerator:
             "specific_examples": conversation_summary.get("specific_examples"),
         }
 
-        prompt = f"""Generate a personalized description of what it means for this person to have the persona "{persona['persona']['full_name']}" based on their interview responses. 
-        
-        Persona: {persona['persona']['full_name']} 
-        Traits: {persona['persona']['trait_1']} and {persona['persona']['trait_2']}
-        Score: {persona['score']:.2f} 
+        prompt = f"""You are an expert organizational psychologist and team dynamics specialist.
+You are analyzing a candidate who maps to the persona "{persona['persona']['full_name']}".
 
-        Interview Insights:
-        - Key Strengths: {summary_fields['key_strengths']}
-        - Areas for Improvement: {summary_fields['areas_for_improvement']}
-        - Communication Style: {summary_fields['communication_style']}
-        - Problem Solving Approach: {summary_fields['problem_solving_approach']}
-        - Emotional Intelligence: {summary_fields['emotional_intelligence']}
-        - Professional Maturity: {summary_fields['professional_maturity']}
-        - Specific Examples: {summary_fields['specific_examples']}
+Persona:
+- Name: {persona['persona']['full_name']}
+- Core Traits: {persona['persona']['trait_1']} and {persona['persona']['trait_2']}
+- Persona Score: {persona['score']:.2f}
 
-        Write a personalized 2-3 sentence description explaining what this persona means for this specific individual based on their interview responses. Be specific and reference their actual traits and examples. Return only the description text, no JSON or formatting.
-        
-        """ 
+Interview Insights (may be partially filled, use what is available and ignore missing fields):
+- Key Strengths: {summary_fields['key_strengths']}
+- Areas for Improvement: {summary_fields['areas_for_improvement']}
+- Communication Style: {summary_fields['communication_style']}
+- Problem Solving Approach: {summary_fields['problem_solving_approach']}
+- Emotional Intelligence: {summary_fields['emotional_intelligence']}
+- Professional Maturity: {summary_fields['professional_maturity']}
+- Specific Examples: {summary_fields['specific_examples']}
 
-        response = llm.invoke(prompt) 
-        return response.content.strip()
+Using ONLY the information above and what is typical for this persona type, generate structured, concise insights.
+
+Return a SINGLE JSON object with EXACTLY the following keys:
+- "overall_summary": a 2–3 sentence narrative describing what this persona means for this specific individual.
+- "trust_building": an array of 3–4 short bullet-point style strings describing how this persona tends to build trust with others.
+- "team_dynamics": an array of 3–4 short bullet-point style strings describing how this persona typically contributes to team dynamics.
+- "stress_patterns": an array of 3–4 short bullet-point style strings describing this persona's common stress patterns or early signals of stress.
+- "collaboration_tips": an array of 3–4 short bullet-point style strings describing how colleagues should best collaborate with this persona.
+- "things_to_avoid": an array of 3–4 short bullet-point style strings describing what others should avoid doing when working with this persona.
+- "career_paths": an array of 3–4 short bullet-point style strings describing suitable career path tracks for this persona.
+
+REQUIREMENTS:
+- Each array MUST contain 3–4 concise, concrete points (no more, no less than 3–4).
+- All content MUST be personalized to the given persona and interview insights.
+- Do NOT include any additional keys.
+- Do NOT include any explanation or prose outside the JSON.
+
+Return ONLY valid JSON."""
+
+        response = llm.invoke(prompt)
+        response_text = response.content.strip()
+
+        # The model is instructed to return pure JSON. We enforce that strictly,
+        # but allow for the common case where the JSON is wrapped in extra text.
+        if not response_text:
+            raise ValueError("Empty response from persona LLM")
+
+        if response_text.lstrip().startswith("{") and response_text.rstrip().endswith("}"):
+            return json.loads(response_text)
+
+        # Try to extract the first JSON object from the text
+        import re
+        match = re.search(r"\{.*\}", response_text, re.DOTALL)
+        if not match:
+            raise ValueError(f"Persona LLM response did not contain JSON: {response_text[:200]}")
+
+        return json.loads(match.group())
     
     def generate_report(self, hierarchical_results: Any, conversation_summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Generate persona ranking report using weighted COG groups"""
@@ -364,7 +397,13 @@ class PersonaRankingGenerator:
                 "cog_groups": primary_trait["cog_groups"],
                 "weighted_score_breakdown": primary_trait["weighted_score_breakdown"],
                 "weighted_score_sum": primary_trait["weighted_score_sum"],
-                "description": primary_description
+                "description": primary_description.get("overall_summary") if primary_description else None,
+                "trust_building": primary_description.get("trust_building") if primary_description else None,
+                "team_dynamics": primary_description.get("team_dynamics") if primary_description else None,
+                "stress_patterns": primary_description.get("stress_patterns") if primary_description else None,
+                "collaboration_tips": primary_description.get("collaboration_tips") if primary_description else None,
+                "things_to_avoid": primary_description.get("things_to_avoid") if primary_description else None,
+                "career_paths": primary_description.get("career_paths") if primary_description else None,
             } if primary_trait else None,
             "secondary_traits": [
                 {
@@ -382,7 +421,13 @@ class PersonaRankingGenerator:
                     "cog_groups": st["cog_groups"],
                     "weighted_score_breakdown": st["weighted_score_breakdown"],
                     "weighted_score_sum": st["weighted_score_sum"],
-                    "description": secondary_descriptions[i] if i < len(secondary_descriptions) else None
+                    "description": (secondary_descriptions[i].get("overall_summary") if i < len(secondary_descriptions) and secondary_descriptions[i] else None),
+                    "trust_building": (secondary_descriptions[i].get("trust_building") if i < len(secondary_descriptions) and secondary_descriptions[i] else None),
+                    "team_dynamics": (secondary_descriptions[i].get("team_dynamics") if i < len(secondary_descriptions) and secondary_descriptions[i] else None),
+                    "stress_patterns": (secondary_descriptions[i].get("stress_patterns") if i < len(secondary_descriptions) and secondary_descriptions[i] else None),
+                    "collaboration_tips": (secondary_descriptions[i].get("collaboration_tips") if i < len(secondary_descriptions) and secondary_descriptions[i] else None),
+                    "things_to_avoid": (secondary_descriptions[i].get("things_to_avoid") if i < len(secondary_descriptions) and secondary_descriptions[i] else None),
+                    "career_paths": (secondary_descriptions[i].get("career_paths") if i < len(secondary_descriptions) and secondary_descriptions[i] else None),
                 }
                 for i, st in enumerate(secondary_traits)
             ],
