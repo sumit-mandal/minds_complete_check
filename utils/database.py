@@ -166,6 +166,19 @@ class InterviewSummary(Base):
     updated_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
 
 
+class IndividualSessionRecord(Base):
+    __tablename__ = "individual_session_records"
+
+    session_id = sa.Column(
+        pg.UUID(as_uuid=True),
+        sa.ForeignKey("interview_sessions.session_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    data = sa.Column(pg.JSONB, nullable=False, default=dict)
+    created_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+    updated_at = sa.Column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
+
+
 @contextmanager
 def get_db_session() -> Session:
     session = SessionLocal()
@@ -751,6 +764,49 @@ Return JSON only."""
             if report:
                 return report.data
             return None
+
+    def save_individual_session_record(self, session_id: str, session_record: Dict[str, Any]):
+        """Save individual session record (full /sessions/{session_id} payload) to individual_session_records table"""
+        # Ensure data is JSON-serializable (convert datetime, uuid, etc.)
+        serialized = self._serialize_for_jsonb(session_record)
+        with get_db_session() as db:
+            existing = (
+                db.query(IndividualSessionRecord)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .first()
+            )
+            if existing:
+                existing.data = serialized
+                existing.updated_at = datetime.now(timezone.utc)
+            else:
+                db.add(IndividualSessionRecord(
+                    session_id=self._to_uuid(session_id),
+                    data=serialized
+                ))
+
+    def get_individual_session_record(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve individual session record from the individual_session_records table"""
+        with get_db_session() as db:
+            record = (
+                db.query(IndividualSessionRecord)
+                .filter_by(session_id=self._to_uuid(session_id))
+                .first()
+            )
+            if record:
+                return record.data
+            return None
+
+    def _serialize_for_jsonb(self, obj: Any) -> Any:
+        """Recursively convert datetime/uuid to JSON-serializable format for JSONB storage"""
+        if isinstance(obj, dict):
+            return {k: self._serialize_for_jsonb(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self._serialize_for_jsonb(v) for v in obj]
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        return obj
 
     def get_session_time_info(self, session_id: str) -> Dict[str, Any]:
         """Get session time information (start_time, end_time, duration_seconds) - optimized query"""

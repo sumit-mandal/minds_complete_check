@@ -179,6 +179,22 @@ if __name__ == "__main__":
             print("✅ Created interview_summaries")
         else:
             print("⏭️  interview_summaries already exists")
+
+        # Create individual_session_records table
+        if "individual_session_records" not in existing_tables:
+            conn.execute(text("""
+                CREATE TABLE individual_session_records (
+                    session_id UUID PRIMARY KEY,
+                    data JSONB NOT NULL DEFAULT '{}',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT fk_individual_session_records_session_id
+                    FOREIGN KEY (session_id) REFERENCES interview_sessions(session_id) ON DELETE CASCADE
+                )
+            """))
+            print("✅ Created individual_session_records")
+        else:
+            print("⏭️  individual_session_records already exists")
         
         # Remove conn.commit() - begin() auto-commits on success
         print("\n✅ All tables created successfully!")

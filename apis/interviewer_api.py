@@ -76,6 +76,7 @@ class SessionDataResponse(BaseModel):
     responses: List[Dict[str, Any]]
     final_results: Dict[str, Any]
     conversation_summary: Optional[Dict[str, Any]] = None
+    cached: Optional[bool] = False
 
 class SessionsListResponse(BaseModel):
     sessions: List[Dict[str, Any]]
@@ -225,20 +226,28 @@ async def get_all_sessions():
         raise HTTPException(status_code=500, detail=f"Failed to get sessions: {str(e)}")
 
 @router.get("/sessions/{session_id}", response_model=SessionDataResponse)
-async def get_session_data(session_id: str):
-    """Get complete data for a specific session"""
+async def get_session_data(session_id: str, use_db: bool = True):
+    """Get complete data for a specific session (session, responses, final_results, conversation_summary)"""
     try:
+        if use_db:
+            cached_record = database.get_individual_session_record(session_id)
+            if cached_record:
+                return SessionDataResponse(**cached_record, cached=True)
+
         session_data = database.get_session_data(session_id)
         if not session_data:
             raise HTTPException(status_code=404, detail="Session not found")
-        
+
         # Get conversation summary
         conversation_summary = database.get_conversation_summary(session_id)
-        
+
         # Add conversation summary to response
         session_data["conversation_summary"] = conversation_summary.get("conversation_summary") if conversation_summary else None
-        
-        return SessionDataResponse(**session_data)
+
+        # Save to individual_session_records for future cache hits
+        database.save_individual_session_record(session_id, session_data)
+
+        return SessionDataResponse(**session_data, cached=False)
     except HTTPException:
         raise
     except Exception as e:

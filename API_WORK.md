@@ -223,10 +223,13 @@ All endpoints are prefixed with `/interviewer`
 ### 5. Get Session Data
 **Endpoint**: `GET https://api.mirrorminds.ai/interviewer/sessions/{session_id}`
 
-**Purpose**: Get complete session data including all responses, evaluations, and final results.
+**Purpose**: Get complete session data including all responses, evaluations, final results, and conversation summary. Data is cached in `individual_session_records` table for faster retrieval.
 
 **Path Parameters**:
 - `session_id` (string): The interview session ID
+
+**Query Parameters**:
+- `use_db` (boolean, default: true): When true, returns cached data from `individual_session_records` if available. When false, always fetches fresh data and regenerates conversation summary.
 
 **Response** (200 OK):
 ```json
@@ -254,9 +257,12 @@ All endpoints are prefixed with `/interviewer`
     "domain_scores": {...},
     "hierarchical_results": {...}
   },
-  "conversation_summary": "The interview covered..."
+  "conversation_summary": {...},
+  "cached": false
 }
 ```
+
+- `cached` (boolean): Indicates whether the response was served from cache (`true`) or freshly generated (`false`).
 
 **Use Case**: Load full interview history for review pages or detailed analysis.
 
