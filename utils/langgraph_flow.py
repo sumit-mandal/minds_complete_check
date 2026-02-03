@@ -845,9 +845,9 @@ Create a detailed summary including:
    - Makes it feel personal and meaningful, not generic or dry
    - Highlights what makes {name if name else 'them'} unique based on their responses
 2. Domain-specific scores and analysis, but don't reveal domain names. Instead make it more humanely.
-3. Key strengths identified - Frame these in a way that celebrates {name if name else 'the candidate'}'s unique qualities
-4. Areas for improvement - Present these constructively and supportively
-5. Specific recommendations for growth - Tailor these to {name if name else 'their'} career level and industry context
+3. Key strengths identified - Frame these in a way that celebrates {name if name else 'the candidate'}'s unique qualities. Each strength MUST be a full sentence or a descriptive phrase (at least 8-10 words). Do NOT output single domain or skill names (e.g. not "Leadership", "Empathy", "Creativity"). Instead write what they demonstrated, e.g. "Demonstrated strong leadership by guiding the team through a difficult transition."
+4. Areas for improvement - Present these constructively and supportively. Each item MUST be a full sentence or descriptive phrase (at least 8-10 words). Do NOT output single domain names (e.g. not "Emotional Security", "Alignment"). Instead write what they could improve and how, e.g. "Could strengthen how they maintain trust under pressure by sharing more concrete examples."
+5. Specific recommendations for growth - Tailor these to {name if name else 'their'} career level and industry context. Each recommendation must be a full sentence.
 6. Overall impressions and insights - Make this section feel like a genuine reflection on {name if name else 'the candidate'}'s potential
 7. The language of summary should be very simple english, and it should be in a way that it is telling a story to the candidate.
 Be thorough, {persona_style['tone'] if persona_style else 'warm'}, and constructive in your analysis. Write as if you're speaking directly to {name if name else 'the candidate'} or about {name if name else 'them'} in a way that feels personal and authentic.
@@ -855,11 +855,12 @@ Be thorough, {persona_style['tone'] if persona_style else 'warm'}, and construct
 Return your response as a JSON object with the following structure:
 {{
     "overall_score": <numeric_score>,
-    "strengths": ["strength1", "strength2", ...],
-    "areas_for_improvement": ["area1", "area2", ...],
-    "recommendations": ["recommendation1", "recommendation2", ...],
+    "strengths": ["Full sentence or descriptive phrase for strength 1.", "Full sentence or descriptive phrase for strength 2.", ...],
+    "areas_for_improvement": ["Full sentence or descriptive phrase for area 1.", "Full sentence or descriptive phrase for area 2.", ...],
+    "recommendations": ["Full sentence recommendation 1.", "Full sentence recommendation 2.", ...],
     "analysis": "detailed, personalized analysis text that addresses the candidate by name and feels warm and engaging"
-}}"""
+}}
+CRITICAL: Every item in "strengths" and "areas_for_improvement" must be a complete sentence or phrase (minimum 8 words). Never use only a domain or skill name as an item."""
 
         # Use the regular LLM instead of structured output
         from utils.graph_3_llm_helper import llm

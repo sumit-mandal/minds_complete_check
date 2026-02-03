@@ -165,6 +165,20 @@ async def get_progress(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")
 
+def _summary_has_short_items(summary: Optional[Dict[str, Any]]) -> bool:
+    """True if strengths or areas_for_improvement look like labels instead of full text."""
+    if not summary:
+        return False
+    for key in ("strengths", "areas_for_improvement"):
+        items = summary.get(key)
+        if not isinstance(items, list) or not items:
+            continue
+        for item in items:
+            if isinstance(item, str) and (len(item.strip()) < 20 or len(item.split()) < 4):
+                return True
+    return False
+
+
 @router.get("/results/{session_id}", response_model=ResultsResponse)
 async def get_results(session_id: str, use_db: bool = True):
     """Get current interview results"""
@@ -173,13 +187,16 @@ async def get_results(session_id: str, use_db: bool = True):
             session_data = database.get_session_data(session_id)
             if session_data and session_data.get("final_results"):
                 final_results = session_data.get("final_results", {})
-                
-                # Get summary from interview_summaries table
                 summary = database.get_interview_summary(session_id)
-                
-                # Get session time info to match /submit API response structure
+                if summary and _summary_has_short_items(summary):
+                    conv_data = database.get_conversation_summary(session_id)
+                    conv = conv_data.get("conversation_summary") if conv_data else None
+                    if conv:
+                        if conv.get("key_strengths"):
+                            summary = {**summary, "strengths": conv["key_strengths"]}
+                        if conv.get("areas_for_improvement"):
+                            summary = {**summary, "areas_for_improvement": conv["areas_for_improvement"]}
                 time_info = database.get_session_time_info(session_id)
-                
                 return ResultsResponse(results={
                     "final_results": final_results,
                     "summary": summary,
