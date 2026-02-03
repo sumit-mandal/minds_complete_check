@@ -271,7 +271,7 @@ Interview Insights (may be partially filled, use what is available and ignore mi
 Using ONLY the information above and what is typical for this persona type, generate structured, concise insights.
 
 Return a SINGLE JSON object with EXACTLY the following keys:
-- "overall_summary": a 2–3 sentence narrative describing what this persona means for this specific individual.
+- "overall_summary": Generate a personalized description of what it means for this person to have the persona "{persona['persona']['full_name']}" based on their interview responses. 
 - "trust_building": an array of 3–4 short bullet-point style strings describing how this persona tends to build trust with others.
 - "team_dynamics": an array of 3–4 short bullet-point style strings describing how this persona typically contributes to team dynamics.
 - "stress_patterns": an array of 3–4 short bullet-point style strings describing this persona's common stress patterns or early signals of stress.
@@ -305,7 +305,56 @@ Return ONLY valid JSON."""
             raise ValueError(f"Persona LLM response did not contain JSON: {response_text[:200]}")
 
         return json.loads(match.group())
-    
+
+    def _generate_least_persona_insights(
+        self, persona: Dict[str, Any], conversation_summary: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Generate why-lowest and how-to-improve insights for the lowest-scoring persona."""
+        summary_fields = {
+            "key_strengths": conversation_summary.get("key_strengths"),
+            "areas_for_improvement": conversation_summary.get("areas_for_improvement"),
+            "communication_style": conversation_summary.get("communication_style"),
+            "problem_solving_approach": conversation_summary.get("problem_solving_approach"),
+            "emotional_intelligence": conversation_summary.get("emotional_intelligence"),
+            "professional_maturity": conversation_summary.get("professional_maturity"),
+            "specific_examples": conversation_summary.get("specific_examples"),
+        }
+        cog_groups = persona.get("cog_groups", {})
+        breakdown = persona.get("weighted_score_breakdown", {})
+
+        prompt = f"""You are an expert organizational psychologist. Analyze why this candidate scored lowest on the persona "{persona['persona']['full_name']}" and how they can improve.
+
+Persona: {persona['persona']['full_name']} (traits: {persona['persona']['trait_1']}, {persona['persona']['trait_2']})
+Persona Score: {persona['score']:.2f}
+COG group scores: {json.dumps(cog_groups, indent=2)}
+Weighted breakdown: {json.dumps(breakdown, indent=2)}
+
+Interview insights:
+- Key Strengths: {summary_fields['key_strengths']}
+- Areas for Improvement: {summary_fields['areas_for_improvement']}
+- Communication Style: {summary_fields['communication_style']}
+- Problem Solving Approach: {summary_fields['problem_solving_approach']}
+- Emotional Intelligence: {summary_fields['emotional_intelligence']}
+- Professional Maturity: {summary_fields['professional_maturity']}
+- Specific Examples: {summary_fields['specific_examples']}
+
+Return a SINGLE JSON object with EXACTLY these keys:
+- "why_lowest_score": A clear, specific analysis (2-4 sentences) of why this persona scored lowest, based on the data above.
+- "improvement_suggestions": An array of 3-4 concrete, actionable steps the candidate can take to strengthen these traits.
+
+Return ONLY valid JSON."""
+
+        response = llm.invoke(prompt)
+        response_text = response.content.strip()
+        if not response_text:
+            raise ValueError("Empty response from least persona LLM")
+        if response_text.lstrip().startswith("{") and response_text.rstrip().endswith("}"):
+            return json.loads(response_text)
+        match = re.search(r"\{.*\}", response_text, re.DOTALL)
+        if not match:
+            raise ValueError(f"Least persona LLM response did not contain JSON: {response_text[:200]}")
+        return json.loads(match.group())
+
     def generate_report(self, hierarchical_results: Any, conversation_summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Generate persona ranking report using weighted COG groups"""
         parsed_results = self._parse_hierarchical_results(hierarchical_results) 
@@ -316,6 +365,7 @@ Return ONLY valid JSON."""
                 "ranked_personas": [],
                 "primary_trait": None,
                 "secondary_traits": [],
+                "least_scoring_persona": None,
                 "domain_scores": {}
             }
         
@@ -348,9 +398,11 @@ Return ONLY valid JSON."""
 
         primary_trait = persona_rankings[0] if persona_rankings else None
         secondary_traits = persona_rankings[1:3] if len(persona_rankings) > 1 else []
+        least_trait = persona_rankings[-1] if persona_rankings else None
 
         primary_description = None
         secondary_descriptions = []
+        least_insights = None
 
         if conversation_summary and primary_trait:
             primary_description = self._generate_persona_description(primary_trait, conversation_summary)
@@ -359,6 +411,9 @@ Return ONLY valid JSON."""
             for st in secondary_traits:
                 description = self._generate_persona_description(st, conversation_summary)
                 secondary_descriptions.append(description)
+
+        if conversation_summary and least_trait:
+            least_insights = self._generate_least_persona_insights(least_trait, conversation_summary)
 
         return {
             "ranked_personas": [
@@ -431,6 +486,15 @@ Return ONLY valid JSON."""
                 }
                 for i, st in enumerate(secondary_traits)
             ],
+            "least_scoring_persona": {
+                "persona_code": least_trait["persona"]["code"],
+                "persona_name": least_trait["persona"]["full_name"],
+                "score": least_trait["score"],
+                "trait_1": {"name": least_trait["persona"]["trait_1"], "score": round(least_trait["trait_1_score"], 2) if least_trait["trait_1_score"] is not None else None},
+                "trait_2": {"name": least_trait["persona"]["trait_2"], "score": round(least_trait["trait_2_score"], 2) if least_trait["trait_2_score"] is not None else None},
+                "why_lowest_score": least_insights.get("why_lowest_score") if least_insights else None,
+                "improvement_suggestions": least_insights.get("improvement_suggestions") if least_insights else None,
+            } if least_trait else None,
             "domain_scores": {
                 domain: round(score, 2)
                 for domain, score in domain_scores.items()
