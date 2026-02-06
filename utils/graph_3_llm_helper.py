@@ -91,7 +91,7 @@ CRITICAL REPETITION RULES:
 - If the current response is genuinely different and provides new examples, insights, or evidence, evaluate it normally.
 """
     
-    evaluation_prompt = f"""You are an encouraging and fair evaluator. Analyze the user's response and assign scores to skills that are demonstrated with reasonable evidence. Be encouraging but maintain evaluation integrity - recognize genuine demonstrations while ensuring the interview provides meaningful assessment.
+    evaluation_prompt = f"""You are an encouraging and fair evaluator, who is little lineant and less strict, you believe in the user's ability to learn and grow and give them good scores. Analyze the user's response and assign scores to skills that are demonstrated with reasonable evidence.  Recognize genuine demonstrations while ensuring the interview provides meaningful assessment.
 {previous_context}
 Current response to evaluate: {user_response}
 
@@ -124,6 +124,7 @@ EVALUATION GUIDELINES:
    - Look for indirect indicators and contextual clues that suggest genuine demonstration
    - When there's reasonable evidence, score the skill appropriately
    - Don't score skills based on very weak or purely speculative connections
+   - Give credit for plausible connections; do not require strong or multiple examples
 
 3. RESPONSE QUALITY ASSESSMENT:
    - Short responses can demonstrate skills if they contain relevant and meaningful information
@@ -132,12 +133,12 @@ EVALUATION GUIDELINES:
    - Look for genuine intent and underlying understanding, not just surface-level mentions
 
 4. SCORING SCALE (0-10) - Balanced ranges:
-   - 0-2: No demonstration or completely irrelevant
-   - 2-4: Very minimal or tangential demonstration, weak connection
-   - 4-6: Basic demonstration with some evidence (explicit or implicit)
-   - 6-7.5: Clear demonstration with reasonable evidence or examples
-   - 7.5-9: Strong demonstration with good evidence
-   - 9-10: Excellent demonstration with multiple examples or very strong evidence
+   - 0–2: No clear demonstration, largely irrelevant, or off-topic
+   - 2–4: Limited or unclear demonstration; intent is visible but weakly expressed
+   - 4–6: Basic demonstration with some relevant points; evidence may be implicit or incomplete
+   - 6–7.5: Clear demonstration with at least one reasonable example or explanation
+   - 7.5–9: Strong demonstration with well-articulated reasoning and supporting evidence
+   - 9–10: Exceptional demonstration with multiple strong examples, clarity, and depth
 
 5. DECIMAL SCORING:
    - Use decimal scores (e.g., 1.8, 2.1, 3.4, 7.3, 8.5) NOT whole numbers
@@ -147,7 +148,11 @@ EVALUATION GUIDELINES:
    - If the current response repeats or closely paraphrases a previous response, return 0 for all skills that were already scored from that same content.
    - Only score skills based on genuinely NEW information that was not present in any previous response.
 
-IMPORTANT: Be balanced in your evaluation, but on the lineant side of the scale. Recognize genuine strengths and demonstrations while maintaining evaluation integrity. Look for reasonable connections between the response and the skills. Avoid giving credit for partial demonstrations and implied understanding when there's actual evidence, but don't inflate scores unnecessarily. The goal is to provide meaningful assessment that encourages growth while maintaining standards.
+IMPORTANT: Be balanced in your evaluation, but on the lineant side of the scale. Recognize genuine strengths and demonstrations while maintaining evaluation integrity. Look for reasonable connections between the response and the skills. Avoid giving credit for partial demonstrations and implied understanding when there's actual evidence.
+ The goal is to provide meaningful assessment that encourages growth while maintaining standards.
+ Give credit for partial and implied demonstrations when there is any plausible evidence; avoid only clearly inflated or unsupported scores.
+
+Aim for a lenient but credible assessment. Most responses that touch on a skill in a relevant way should land in the 5–7.5 range. Reserve scores below 4 only when there is genuinely little or no connection to the skill.
 
 Return ONLY a JSON object with skill names as keys and numeric scores as values. Do not include any other text, just the JSON object."""
 
