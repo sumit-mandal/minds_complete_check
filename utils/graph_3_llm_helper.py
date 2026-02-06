@@ -120,7 +120,7 @@ EVALUATION GUIDELINES:
    - Be encouraging but maintain evaluation standards
 
 2. SKILL SELECTION:
-   - Score skills that are demonstrated with reasonable evidence (explicit or implicit)
+   - Score skills that are demonstrated with reasonable evidence, vague skills demonstration should be ignored (explicit or implicit)
    - Look for indirect indicators and contextual clues that suggest genuine demonstration
    - When there's reasonable evidence, score the skill appropriately
    - Don't score skills based on very weak or purely speculative connections
@@ -147,7 +147,7 @@ EVALUATION GUIDELINES:
    - If the current response repeats or closely paraphrases a previous response, return 0 for all skills that were already scored from that same content.
    - Only score skills based on genuinely NEW information that was not present in any previous response.
 
-IMPORTANT: Be balanced in your evaluation. Recognize genuine strengths and demonstrations while maintaining evaluation integrity. Look for reasonable connections between the response and the skills. Give credit for partial demonstrations and implied understanding when there's actual evidence, but don't inflate scores unnecessarily. The goal is to provide meaningful assessment that encourages growth while maintaining standards.
+IMPORTANT: Be balanced in your evaluation, but on the lineant side of the scale. Recognize genuine strengths and demonstrations while maintaining evaluation integrity. Look for reasonable connections between the response and the skills. Avoid giving credit for partial demonstrations and implied understanding when there's actual evidence, but don't inflate scores unnecessarily. The goal is to provide meaningful assessment that encourages growth while maintaining standards.
 
 Return ONLY a JSON object with skill names as keys and numeric scores as values. Do not include any other text, just the JSON object."""
 
