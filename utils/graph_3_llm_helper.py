@@ -72,43 +72,61 @@ def evaluate_response_with_llm(user_response: str, all_skills: list) -> dict:
         "applied_skills": [{"name": s["name"], "practical_applications": s.get("practical_applications", [])} for s in applied_skills]
     }
     
-    evaluation_prompt = f"""You are an encouraging, fair evaluator. Your goal is to recognize what the candidate has demonstrated while keeping the assessment meaningful. When in doubt, err on the side of giving credit—partial or implied evidence still counts.
+    evaluation_prompt = f"""You are an encouraging and fair evaluator. Analyze the user's response and assign scores to skills that are demonstrated with reasonable evidence. Be encouraging but maintain evaluation integrity - recognize genuine demonstrations while ensuring the interview provides meaningful assessment.
 
 User response: {user_response}
 
-SKILL CATEGORY CONTEXT:
+SKILL CATEGORIZATION:
 Core Skills: {json.dumps(skill_categories["core_skills"], separators=(',', ':'))}
 Applied Skills: {json.dumps(skill_categories["applied_skills"], separators=(',', ':'))}
 
 DEFINITIONS:
 
-1. CORE SKILLS - Foundational talent that may or may not be visible. Look for awareness, understanding, or recognition of the talent (direct or implied).
-   - Score generously when there are signs of familiarity, context, or intent related to the trait.
+1. CORE SKILLS - A foundational talent/gift that exists within all individuals that may or may not be visible to others. The strength of the foundational core skill varies by individual based on their level of awareness and subsequent development of the talent, as they may or may not be aware that this innate talent exists within themselves.
+   - Evaluate: Look for signs of awareness, understanding, or recognition of the foundational talent
+   - Evidence can be: Direct statements, implied understanding, indirect references, contextual clues, or responses suggesting familiarity with the concept
+   - Scoring approach: Recognize genuine awareness or understanding, even if not fully developed
 
-2. APPLIED SKILLS - How the skill shows up in real work. Look for examples, scenarios, or descriptions that suggest practical experience or application.
-   - Score generously when the response suggests real-world use, even without lengthy detail.
+2. APPLIED SKILLS - This is how the skill is applied or "shows up" in real work through interactions, situations, the environment, and/or opportunity.
+   - Evaluate: Look for how the skill manifests in real-world contexts
+   - Evidence can be: Specific examples, general scenarios, implied applications, descriptions suggesting practical experience, or contextual indicators
+   - Scoring approach: Recognize real-world manifestations, even if not exhaustively detailed
 
-EVALUATION APPROACH:
+EVALUATION GUIDELINES:
 
-- Give credit for plausible connections between the response and each skill; do not require strong or multiple examples.
-- Short or generic responses can still receive solid scores (e.g. 5–7) if they show relevant understanding or intent.
-- Only use the bottom of the scale (0–3) when the response is clearly irrelevant or shows no connection to the skill.
-- Prefer the middle–upper part of the scale (5–8) when there is any reasonable evidence or implied demonstration.
+1. BALANCED EVALUATION:
+   - Look for reasonable connections between the response and the skills
+   - Recognize partial demonstrations and implied understanding when there's genuine evidence
+   - Give credit for intent and underlying understanding, but ensure there's actual evidence
+   - Be encouraging but maintain evaluation standards
 
-SCORING SCALE (0–10) – Lenient, encouragement-oriented:
+2. SKILL SELECTION:
+   - Score skills that are demonstrated with reasonable evidence (explicit or implicit)
+   - Look for indirect indicators and contextual clues that suggest genuine demonstration
+   - When there's reasonable evidence, score the skill appropriately
+   - Don't score skills based on very weak or purely speculative connections
 
-   - 0–2: No connection or completely off-topic for this skill
-   - 2–4: Tangential or very weak link; minimal relevance
-   - 4–6: Some relevance or implied demonstration; give credit for intent and partial evidence
-   - 6–7.5: Clear relevance or reasonable demonstration; good fit for a typical response
-   - 7.5–9: Strong or multiple indicators; above average
-   - 9–10: Exceptional, multiple clear examples or very strong evidence
+3. RESPONSE QUALITY ASSESSMENT:
+   - Short responses can demonstrate skills if they contain relevant and meaningful information
+   - Responses without explicit examples can still score if they show genuine understanding or implied experience
+   - Generic statements can demonstrate skills if they're contextually relevant and show understanding
+   - Look for genuine intent and underlying understanding, not just surface-level mentions
 
-- Use decimals (e.g. 5.2, 6.5, 7.3). Avoid whole numbers like 5.0 or 6.0 when possible.
+4. SCORING SCALE (0-10) - Balanced ranges:
+   - 0-2: No demonstration or completely irrelevant
+   - 2-4: Very minimal or tangential demonstration, weak connection
+   - 4-6: Basic demonstration with some evidence (explicit or implicit)
+   - 6-7.5: Clear demonstration with reasonable evidence or examples
+   - 7.5-9: Strong demonstration with good evidence
+   - 9-10: Excellent demonstration with multiple examples or very strong evidence
 
-IMPORTANT: Aim for a lenient but credible assessment. Most responses that touch on a skill in a relevant way should land in the 5–7.5 range. Reserve scores below 4 for when there is genuinely little or no connection to the skill.
+5. DECIMAL SCORING:
+   - Use decimal scores (e.g., 1.8, 2.1, 3.4, 7.3, 8.5) NOT whole numbers
+   - Avoid scores like 5.0, 6.0 - use 4.8, 5.2, 6.3 instead
 
-Return ONLY a JSON object with skill names as keys and numeric scores as values. No other text."""
+IMPORTANT: Be balanced in your evaluation. Recognize genuine strengths and demonstrations while maintaining evaluation integrity. Look for reasonable connections between the response and the skills. Give credit for partial demonstrations and implied understanding when there's actual evidence, but don't inflate scores unnecessarily. The goal is to provide meaningful assessment that encourages growth while maintaining standards.
+
+Return ONLY a JSON object with skill names as keys and numeric scores as values. Do not include any other text, just the JSON object."""
 
     try:
         response = evaluation_llm.invoke(evaluation_prompt)
