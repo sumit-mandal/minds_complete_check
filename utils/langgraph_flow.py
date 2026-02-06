@@ -525,9 +525,8 @@ def evaluate_response_targeted(user_response: str, state_manager: StateManager, 
                     })
     
     try:
-        # Use the custom evaluation function
         from utils.graph_3_llm_helper import evaluate_response_with_llm
-        evaluation = evaluate_response_with_llm(user_response, targeted_skills)
+        evaluation = evaluate_response_with_llm(user_response, targeted_skills, previous_responses=state_manager.state.user_responses)
         return evaluation
     except Exception as e:
         print(f"Warning: LLM evaluation failed: {e}")
@@ -550,9 +549,8 @@ def evaluate_response_comprehensive(user_response: str, state_manager: StateMana
                 })
     
     try:
-        # Use the custom evaluation function
         from utils.graph_3_llm_helper import evaluate_response_with_llm
-        evaluation = evaluate_response_with_llm(user_response, all_skills)
+        evaluation = evaluate_response_with_llm(user_response, all_skills, previous_responses=state_manager.state.user_responses)
         return evaluation
     except Exception as e:
         print(f"Warning: LLM evaluation failed: {e}")

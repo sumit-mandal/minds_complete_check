@@ -46,7 +46,7 @@ def _is_core_domain(domain_name: str) -> bool:
     return any(_normalize_domain_for_categorization(core) == normalized for core in CORE_DOMAINS)
 
 # Custom evaluation function that doesn't use structured output
-def evaluate_response_with_llm(user_response: str, all_skills: list) -> dict:
+def evaluate_response_with_llm(user_response: str, all_skills: list, previous_responses: Optional[List[Dict[str, Any]]] = None) -> dict:
     """Evaluate response using LLM without structured output to avoid parsing issues"""
     
     # Categorize skills into core and applied based on domain name
@@ -71,10 +71,29 @@ def evaluate_response_with_llm(user_response: str, all_skills: list) -> dict:
         "core_skills": [{"name": s["name"], "knowledge_areas": s.get("knowledge_areas", [])} for s in core_skills],
         "applied_skills": [{"name": s["name"], "practical_applications": s.get("practical_applications", [])} for s in applied_skills]
     }
+
+    # Build previous response context for the LLM
+    previous_context = ""
+    if previous_responses:
+        prev_entries = []
+        for prev in previous_responses:
+            prev_text = prev.get("response", "")
+            prev_scores = prev.get("evaluation", {}).get("skill_scores", {})
+            prev_entries.append({"response": prev_text, "scores_given": prev_scores})
+        previous_context = f"""
+PREVIOUS RESPONSES IN THIS INTERVIEW (most recent last):
+{json.dumps(prev_entries, indent=2)}
+
+CRITICAL REPETITION RULES:
+- Compare the current response below with ALL previous responses above.
+- If the current response is identical or nearly identical (same meaning, same examples, same phrasing) to any previous response, it provides NO new evidence. Score only skills that were NOT already scored in the earlier occurrence. For skills that were already scored for that same content, return 0.
+- If the current response is substantially similar but adds some new detail, only score based on the genuinely new information. Do not re-score skills for content that was already evaluated.
+- If the current response is genuinely different and provides new examples, insights, or evidence, evaluate it normally.
+"""
     
     evaluation_prompt = f"""You are an encouraging and fair evaluator. Analyze the user's response and assign scores to skills that are demonstrated with reasonable evidence. Be encouraging but maintain evaluation integrity - recognize genuine demonstrations while ensuring the interview provides meaningful assessment.
-
-User response: {user_response}
+{previous_context}
+Current response to evaluate: {user_response}
 
 SKILL CATEGORIZATION:
 Core Skills: {json.dumps(skill_categories["core_skills"], separators=(',', ':'))}
@@ -123,6 +142,10 @@ EVALUATION GUIDELINES:
 5. DECIMAL SCORING:
    - Use decimal scores (e.g., 1.8, 2.1, 3.4, 7.3, 8.5) NOT whole numbers
    - Avoid scores like 5.0, 6.0 - use 4.8, 5.2, 6.3 instead
+
+6. REPETITION HANDLING:
+   - If the current response repeats or closely paraphrases a previous response, return 0 for all skills that were already scored from that same content.
+   - Only score skills based on genuinely NEW information that was not present in any previous response.
 
 IMPORTANT: Be balanced in your evaluation. Recognize genuine strengths and demonstrations while maintaining evaluation integrity. Look for reasonable connections between the response and the skills. Give credit for partial demonstrations and implied understanding when there's actual evidence, but don't inflate scores unnecessarily. The goal is to provide meaningful assessment that encourages growth while maintaining standards.
 
